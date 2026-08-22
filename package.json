@@ -1,0 +1,26 @@
+{
+  "name": "traveler",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "dev:server": "bun run --cwd packages/server dev",
+    "dev:web": "bun run --cwd packages/web dev",
+    "build": "bun run --cwd packages/web build",
+    "start": "bun run --cwd packages/server start",
+    "typecheck": "bun run typecheck:shared && bun run typecheck:server && bun run typecheck:web",
+    "sync": "bun run --cwd packages/server sync",
+    "typecheck:shared": "tsc -p packages/shared",
+    "typecheck:server": "tsc -p packages/server",
+    "typecheck:web": "tsc -p packages/web",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/bun": "latest",
+    "typescript": "^5.9.2"
+  }
+}

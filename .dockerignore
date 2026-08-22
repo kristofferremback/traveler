@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+**/dist
+data
+*.db
+*.db-shm
+*.db-wal
+*.pmtiles
+.git
+test-results
+playwright-report
+e2e

@@ -1,0 +1,45 @@
+import { z } from "zod";
+
+const Env = z.object({
+  PORT: z.coerce.number().int().default(3000),
+  DATABASE_PATH: z.string().default("./data/traveler.db"),
+  TRAFIKLAB_GTFS_RT_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  VEHICLE_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).default(4000),
+  CATALOG_SYNC_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .default(24 * 60 * 60 * 1000),
+  CATALOG_SYNC_ON_BOOT: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  /**
+   * Enables the manual catalog-refresh endpoint. Unset, the route is not registered at
+   * all -- a public deployment should not expose a button that starts a multi-megabyte
+   * download and a full table rewrite.
+   */
+  ADMIN_TOKEN: z
+    .string()
+    .trim()
+    .min(16, "ADMIN_TOKEN must be at least 16 characters to be worth having")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  /** Directory of built frontend assets. Served only when it exists. */
+  WEB_DIST: z.string().default("../web/dist"),
+  /** Optional .pmtiles basemap on the persistent volume, served with range requests. */
+  PMTILES_PATH: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+});
+
+export const env = Env.parse(process.env);
+export const isProd = env.NODE_ENV === "production";
+export const VERSION = "0.1.0";

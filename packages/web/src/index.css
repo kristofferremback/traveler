@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+/*
+ * Traveler runs mostly at night, on a phone, outdoors. The palette is dark by default
+ * with a light theme that follows the system, and every transport mode keeps SL's own
+ * colours so a line reads the same here as it does on the platform sign.
+ */
+
+@theme {
+  --color-bg: oklch(0.19 0.02 260);
+  --color-surface: oklch(0.24 0.02 260);
+  --color-surface-2: oklch(0.29 0.02 260);
+  --color-border: oklch(0.35 0.02 260);
+  --color-fg: oklch(0.97 0.005 260);
+  --color-muted: oklch(0.72 0.02 260);
+  --color-accent: oklch(0.72 0.16 230);
+  --color-ok: oklch(0.75 0.16 150);
+  --color-warn: oklch(0.80 0.15 80);
+  --color-danger: oklch(0.68 0.19 25);
+
+  /* SL's line colours. Recognisable at a glance and the reason nobody reads the number. */
+  --color-metro-red: oklch(0.58 0.20 25);
+  --color-metro-green: oklch(0.55 0.15 150);
+  --color-metro-blue: oklch(0.52 0.17 250);
+  --color-train: oklch(0.62 0.15 320);
+  --color-tram: oklch(0.68 0.14 200);
+  --color-bus: oklch(0.68 0.17 55);
+  --color-ship: oklch(0.62 0.13 220);
+
+  --radius-card: 0.875rem;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --color-bg: oklch(0.98 0.004 260);
+    --color-surface: oklch(1 0 0);
+    --color-surface-2: oklch(0.96 0.005 260);
+    --color-border: oklch(0.89 0.008 260);
+    --color-fg: oklch(0.22 0.02 260);
+    --color-muted: oklch(0.50 0.02 260);
+    --color-accent: oklch(0.52 0.17 240);
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    /* Stops iOS zooming the page when a search field takes focus. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    /* The map and boards scroll internally; the page itself never should. */
+    overscroll-behavior-y: none;
+  }
+
+  /* Visible focus for keyboard users, absent for pointer users. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+@utility safe-top {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
