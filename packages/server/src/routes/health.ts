@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { env, VERSION } from "../env.ts";
-import { catalogCounts } from "../db/catalog.ts";
+import { catalogCounts, searchIndexSize } from "../db/catalog.ts";
 import { lastSync } from "../sync/catalog.ts";
 import { isSyncRunning, runSyncOnce } from "../sync/scheduler.ts";
 import { departureSubscriberCount } from "../services/departures.ts";
@@ -67,6 +67,42 @@ if (env.ADMIN_TOKEN) {
     return c.json({ queued: true, catalog: catalogStatus() }, 202);
   });
 }
+
+/**
+ * Readiness, as distinct from liveness.
+ *
+ * `/api/health` answers 200 from the moment the process is up, deliberately: on a first
+ * deploy the catalog is empty and filling it takes a few seconds, and a platform health
+ * check that failed during that window would kill the container mid-sync, forever.
+ *
+ * That makes it the wrong signal for anything that needs the catalog to actually work.
+ * A caller that waits on `/api/health` and then searches for a stop gets nothing back
+ * and no error. `/api/ready` answers 503 until the catalog is queryable: stops loaded,
+ * the search index built, and the derived pass finished. The e2e suite waits on this.
+ */
+function readiness() {
+  const counts = catalogCounts();
+  const indexed = searchIndexSize();
+  const derived = lastSync("derived");
+
+  const reasons: string[] = [];
+  if (counts.sites === 0) reasons.push("catalog has no stops");
+  if (indexed === 0) reasons.push("search index is empty");
+  if (derived?.status !== "ok") reasons.push("no completed derived sync");
+
+  return {
+    ready: reasons.length === 0,
+    reasons,
+    syncRunning: isSyncRunning(),
+    sites: counts.sites,
+    indexed,
+  };
+}
+
+health.get("/ready", (c) => {
+  const status = readiness();
+  return c.json(status, status.ready ? 200 : 503);
+});
 
 /** Constant-time compare so the endpoint does not leak the token a character at a time. */
 function timingSafeEqual(a: string, b: string): boolean {

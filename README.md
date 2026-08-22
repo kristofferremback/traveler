@@ -122,6 +122,18 @@ attribution.
 
 ## Deploying
 
+There are two probes, and the difference matters.
+
+`GET /api/health` is liveness. It answers 200 from the moment the process is up, even
+with an empty catalog. That is deliberate: on a first deploy the catalog is empty and
+filling it takes a few seconds, and a platform health check that failed during that
+window would kill the container mid-sync, every time. This is the one Railway uses.
+
+`GET /api/ready` is readiness. It answers 503 until the stops are loaded and the search
+index is built, and names what is missing. Anything that needs the catalog to actually
+work should wait on this. Waiting on `/api/health` instead gets you a server that
+returns `{"places": []}` for every search and no error.
+
 Railway, one service, Dockerfile build. Mount a volume and set `DATABASE_PATH` to a path
 on it, for example `/data/traveler.db`. On first boot the catalog is empty, so the
 server starts a sync in the background and answers health checks while it runs. It takes
@@ -144,6 +156,9 @@ time in both directions, and a guard that line colours stay literal values MapLi
 parse rather than CSS variables it silently renders black.
 
 Playwright drives a real browser against a real server and the live SL APIs. The suite
-starts its own server so it never tests a stale build. It covers the search combobox by
+builds the frontend, starts its own server against its own database under `.e2e/`, and
+waits for `/api/ready`. It therefore proves nothing about the developer's machine: a
+clean checkout syncs the catalog from SL on the first run, which takes about forty
+seconds, and reuses it afterwards. It covers the search combobox by
 keyboard, the URL round-trip that makes a trip shareable, the live departure board, an
 API outage, and a 44-pixel floor on every touch target.

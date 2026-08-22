@@ -34,6 +34,27 @@ async function pickStop(page: Page, field: ReturnType<typeof fromField>, query: 
   await expect(field).toHaveValue(expected);
 }
 
+test.describe("preconditions", () => {
+  test("the catalog is loaded before anything else runs", async ({ request }) => {
+    // The suite waits on /api/ready rather than /api/health, because health answers 200
+    // from process start while the catalog is still filling. Without this gate the run
+    // would begin against an empty database, stop search would return nothing, and the
+    // catalog-backed tests below would fail for a reason unrelated to the code.
+    //
+    // Asserting it here makes that dependency visible, and makes a broken gate fail
+    // with a clear message instead of a dozen confusing ones.
+    const ready = await request.get("/api/ready");
+    expect(ready.status()).toBe(200);
+
+    const body = (await ready.json()) as { ready: boolean; sites: number; indexed: number };
+    expect(body.ready).toBe(true);
+    expect(body.sites).toBeGreaterThan(6000);
+    // Stops loaded but the index empty is a real state, and search silently returns
+    // nothing in it.
+    expect(body.indexed).toBeGreaterThan(6000);
+  });
+});
+
 test.describe("planning a journey", () => {
   test("renders the form instead of a blank page", async ({ page }) => {
     await page.goto("/");

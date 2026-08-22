@@ -179,6 +179,19 @@ const siteCount = countLive("sites");
 const stopPointCount = countLive("stop_points");
 const lineCount = countLive("lines");
 
+const ftsSize = db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM sites_fts");
+
+/**
+ * Rows in the search index.
+ *
+ * Counted separately from `sites` because the two are populated in different steps of
+ * a sync. Between them the catalog holds every stop and search returns nothing, which
+ * looks exactly like a broken deployment.
+ */
+export function searchIndexSize(): number {
+  return ftsSize.get()?.n ?? 0;
+}
+
 export function catalogCounts() {
   return {
     sites: siteCount.get()?.n ?? 0,
