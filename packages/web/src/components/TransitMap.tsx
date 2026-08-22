@@ -107,8 +107,11 @@ export function TransitMap({
     );
 
     instance.on("error", (e) => {
-      // A missing basemap should not take the route lines with it.
-      if (String(e.error?.message ?? "").includes("style")) setStyleError(true);
+      const message = String(e.error?.message ?? e.error ?? "");
+      // A missing basemap should not take the route lines with it, but everything else
+      // needs to reach the console rather than being quietly absorbed here.
+      if (/style|tile|source/i.test(message)) setStyleError(true);
+      else console.error("MapLibre:", message);
     });
 
     instance.on("load", () => {
@@ -128,14 +131,27 @@ export function TransitMap({
         paint: { "line-color": "#0b1220", "line-width": 7, "line-opacity": 0.5 },
         layout: { "line-cap": "round", "line-join": "round" },
       });
+      // Two layers rather than one with a data-driven dash pattern: `line-dasharray`
+      // does not support expressions, and a layer whose paint fails validation simply
+      // does not draw. That left only the dark casing on screen -- a black line where
+      // the coloured route should be, with nothing logged.
       instance.addLayer({
         id: "route-line",
         type: "line",
         source: ROUTE_SOURCE,
+        filter: ["!=", ["get", "walking"], true],
+        paint: { "line-color": ["get", "color"], "line-width": 4 },
+        layout: { "line-cap": "round", "line-join": "round" },
+      });
+      instance.addLayer({
+        id: "route-walk",
+        type: "line",
+        source: ROUTE_SOURCE,
+        filter: ["==", ["get", "walking"], true],
         paint: {
           "line-color": ["get", "color"],
-          "line-width": 4,
-          "line-dasharray": ["case", ["get", "walking"], ["literal", [1, 1.6]], ["literal", [1]]],
+          "line-width": 3,
+          "line-dasharray": [1, 1.6],
         },
         layout: { "line-cap": "round", "line-join": "round" },
       });

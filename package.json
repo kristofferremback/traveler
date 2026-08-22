@@ -16,7 +16,9 @@
     "typecheck:shared": "tsc -p packages/shared",
     "typecheck:server": "tsc -p packages/server",
     "typecheck:web": "tsc -p packages/web",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test": "bun test packages",
+    "check": "bun run typecheck && bun run test && bun run test:e2e"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

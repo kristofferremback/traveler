@@ -134,8 +134,14 @@ scheduled tick.
 ## Tests
 
 ```bash
-bun run test:e2e
+bun run test        # unit tests for the parsing and formatting that bit us
+bun run test:e2e    # Playwright, real browser, live SL data
+bun run check       # types, unit, e2e
 ```
+
+The unit tests cover the traps: id precision, the three timestamp formats, Stockholm
+time in both directions, and a guard that line colours stay literal values MapLibre can
+parse rather than CSS variables it silently renders black.
 
 Playwright drives a real browser against a real server and the live SL APIs. The suite
 starts its own server so it never tests a stale build. It covers the search combobox by

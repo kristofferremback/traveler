@@ -18,14 +18,8 @@
   --color-warn: oklch(0.80 0.15 80);
   --color-danger: oklch(0.68 0.19 25);
 
-  /* SL's line colours. Recognisable at a glance and the reason nobody reads the number. */
-  --color-metro-red: oklch(0.58 0.20 25);
-  --color-metro-green: oklch(0.55 0.15 150);
-  --color-metro-blue: oklch(0.52 0.17 250);
-  --color-train: oklch(0.62 0.15 320);
-  --color-tram: oklch(0.68 0.14 200);
-  --color-bus: oklch(0.68 0.17 55);
-  --color-ship: oklch(0.62 0.13 220);
+  /* Line colours live in lib/modes.ts, not here: MapLibre cannot read CSS variables,
+     and one source of truth beats two that can drift. */
 
   --radius-card: 0.875rem;
 }
