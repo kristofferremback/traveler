@@ -122,6 +122,13 @@ attribution.
 
 ## Deploying
 
+Every route is a read except one. `POST /api/catalog/sync` exists only when
+`ADMIN_TOKEN` is set and is guarded by it; unset, the route is not registered. There is
+no authentication otherwise, and nothing writes user data, which is deliberate: a
+deployed instance holds only a cache of SL's public data. Favourites and trip history
+would change that, so they need an owner for each row decided before the schema, not
+after.
+
 There are two probes, and the difference matters.
 
 `GET /api/health` is liveness. It answers 200 from the moment the process is up, even

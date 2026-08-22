@@ -100,30 +100,10 @@ export const api = {
 
   vehicles: (params: { bbox: string; modes?: string }, signal?: AbortSignal) =>
     get<VehiclesResponse>("/vehicles", params, signal),
-
-  saved: {
-    places: (signal?: AbortSignal) =>
-      get<{ places: { place: Place; label: string | null; pinned: boolean }[] }>(
-        "/saved/places",
-        {},
-        signal,
-      ),
-    savePlace: (place: Place, pinned = false) =>
-      fetch(`${BASE}/api/saved/places`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ place, pinned, label: null }),
-      }),
-    removePlace: (id: string) =>
-      fetch(`${BASE}/api/saved/places${query({ id })}`, { method: "DELETE" }),
-  },
 };
 
 /** Stream URLs, for the SSE hook. */
 export const streams = {
-  site: (siteId: number, signal?: AbortSignal) =>
-    get<{ place: Place }>(`/sites/${siteId}`, {}, signal),
-
   departures: (siteId: number, params: Params) =>
     `${BASE}/api/sites/${siteId}/departures/stream${query(params)}`,
   deviations: (params: Params = {}) => `${BASE}/api/deviations/stream${query(params)}`,

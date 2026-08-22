@@ -212,6 +212,33 @@ test.describe("other surfaces", () => {
       .toBeGreaterThan(major);
   });
 
+  test("the personal-data API is gone, not merely unmounted", async ({ request }) => {
+    // These were built before any feature needed them and served unauthenticated reads
+    // and writes. On a public deployment that is a stranger's write access to personal
+    // places. Removed rather than left dormant; this fails if they come back without
+    // authentication.
+    for (const path of ["/api/saved/places", "/api/saved/journeys"]) {
+      expect((await request.get(path)).status()).toBe(404);
+      expect((await request.post(path, { data: {} })).status()).toBe(404);
+      expect((await request.delete(path)).status()).toBe(404);
+    }
+  });
+
+  test("an unmatched API path is a 404, not the app shell", async ({ request }) => {
+    // The SPA fallback answers unmatched GETs with index.html. It must not do that for
+    // /api, or a client bug surfaces as a JSON parse error pointing at the wrong place.
+    const res = await request.get("/api/nonsense");
+    expect(res.status()).toBe(404);
+    expect(res.headers()["content-type"]).toContain("application/json");
+    expect((await res.json()).error.code).toBe("not_found");
+  });
+
+  test("the admin sync endpoint is absent without a token", async ({ request }) => {
+    // It downloads about 10 MB and rewrites three tables. Registered only when
+    // ADMIN_TOKEN is set, which the test server does not set.
+    expect((await request.post("/api/catalog/sync")).status()).toBe(404);
+  });
+
   test("an unknown route says so instead of going blank", async ({ page }) => {
     await page.goto("/nope");
     await expect(page.getByText("Sidan finns inte.")).toBeVisible();

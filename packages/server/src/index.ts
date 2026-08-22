@@ -11,7 +11,6 @@ import { places } from "./routes/places.ts";
 import { transit } from "./routes/transit.ts";
 import { health } from "./routes/health.ts";
 import { map } from "./routes/map.ts";
-import { saved } from "./routes/saved.ts";
 
 const log = logger("server");
 
@@ -36,7 +35,21 @@ app.route("/api", health);
 app.route("/api/places", places);
 app.route("/api", transit);
 app.route("/api/map", map);
-app.route("/api/saved", saved);
+
+/**
+ * Unmatched API paths are a 404, not the app shell.
+ *
+ * The SPA fallback below answers every unmatched GET with index.html so client-side
+ * routes work on a hard refresh. Without this guard it also answers `/api/typo` with
+ * 200 and a page of HTML, so a client bug surfaces as "JSON.parse: unexpected token <"
+ * somewhere far away instead of a plain 404.
+ */
+app.all("/api/*", (c) =>
+  c.json(
+    { error: { code: "not_found", message: `No API route for ${c.req.method} ${c.req.path}` } },
+    404,
+  ),
+);
 
 app.onError((err, c) => {
   if (err instanceof AppError) {

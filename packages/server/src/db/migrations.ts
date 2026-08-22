@@ -151,4 +151,25 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX saved_journeys_recent_idx ON saved_journeys(pinned DESC, last_used_at DESC);
   `,
+
+  // 5 -- drop the saved-place tables added in 4.
+  //
+  //      They were built ahead of any feature that needed them and were served by a
+  //      public, unauthenticated API: anyone who found the URL could read, overwrite or
+  //      endlessly append personal places on a deployed instance. There is no
+  //      authentication in this build, so the storage goes too rather than sitting
+  //      there as an attractive nuisance.
+  //
+  //      Migration 4 is left untouched rather than rewritten. Forward-only is the whole
+  //      point: a database that already applied it gets the tables removed here, which
+  //      editing history in place would not achieve.
+  //
+  //      When favourites are built for real, they need a new migration and an owner for
+  //      the rows -- a session, an account, something -- decided before the schema.
+  `
+  DROP INDEX IF EXISTS saved_places_recent_idx;
+  DROP TABLE IF EXISTS saved_places;
+  DROP INDEX IF EXISTS saved_journeys_recent_idx;
+  DROP TABLE IF EXISTS saved_journeys;
+  `,
 ];

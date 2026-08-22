@@ -47,6 +47,21 @@ with a timestamp. A catalog sync that fails leaves the previous catalog in place
 Never invent data to fill a required field. A place with no known position returns null
 and falls through to a live lookup rather than defaulting to 0, 0.
 
+## Nothing writable without an owner
+
+A deployed instance is reachable by anyone who has the URL, and there is no
+authentication. Every route is therefore a read, apart from the admin sync endpoint,
+which only exists when `ADMIN_TOKEN` is set.
+
+An earlier version of this shipped `/api/saved` with unauthenticated GET, POST and
+DELETE for personal places, built before any screen used it. On a public deployment
+that is a stranger's write access to somebody's saved trips, and a way to fill the
+volume. It was removed, tables and all, and the e2e suite fails if it returns.
+
+Before adding a write path, decide who owns the row and how the server knows it is
+them. If that question has no answer yet, the feature is not ready and neither is its
+schema.
+
 ## Frontend
 
 Mobile is the product, not a smaller version of it. Touch targets are 44 pixels; the
