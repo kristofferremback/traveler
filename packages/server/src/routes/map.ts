@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { existsSync, statSync } from "node:fs";
 import { env } from "../env.ts";
 import { logger } from "../lib/log.ts";
+import { describe } from "../lib/errors.ts";
 
 const log = logger("map");
 
@@ -52,11 +53,21 @@ async function openFreeMapStyle(theme: Theme): Promise<unknown> {
   const hit = styleCache.get(theme);
   if (hit && hit.expiresAt > Date.now()) return hit.style;
 
-  const res = await fetch(OPENFREEMAP_STYLE[theme], { signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`OpenFreeMap answered ${res.status}`);
-  const style = await res.json();
-  styleCache.set(theme, { style, expiresAt: Date.now() + STYLE_TTL_MS });
-  return style;
+  try {
+    const res = await fetch(OPENFREEMAP_STYLE[theme], { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`OpenFreeMap answered ${res.status}`);
+    const style = await res.json();
+    styleCache.set(theme, { style, expiresAt: Date.now() + STYLE_TTL_MS });
+    return style;
+  } catch (err) {
+    // A style that was good six hours ago beats no map at all. The expiry is a refresh
+    // hint, not a correctness bound: their styles change about never.
+    if (hit) {
+      log.warn(`OpenFreeMap unreachable, serving the cached ${theme} style: ${describe(err)}`);
+      return hit.style;
+    }
+    throw err;
+  }
 }
 
 const OSM_ATTRIBUTION = '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a>';

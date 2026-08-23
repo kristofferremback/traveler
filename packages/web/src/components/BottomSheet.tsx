@@ -6,16 +6,23 @@ import { cn } from "@/lib/utils";
  * leave, on what, and when you land, without touching anything.
  */
 export const PEEK_HEIGHT = 188;
-/** Chips and the map's controls stay reachable at full height. */
+/** Chips and the map's controls stay reachable at full height: this much map stays uncovered. */
 const TOP_GAP = 132;
+/**
+ * The tab bar under the sheet: 3.5rem of links plus its safe-area padding, which is at
+ * least 0.75rem. The sheet's heights are measured from the top of the bar, so the bar
+ * has to come off the viewport before the gap does.
+ */
+const TAB_BAR = 56 + 12;
 
 export type Snap = "peek" | "half" | "full";
 
 function snapHeights(viewport: number): Record<Snap, number> {
+  const usable = viewport - TAB_BAR;
   return {
     peek: PEEK_HEIGHT,
-    half: Math.round(viewport * 0.5),
-    full: Math.max(Math.round(viewport * 0.5), viewport - TOP_GAP),
+    half: Math.round(usable * 0.5),
+    full: Math.max(Math.round(usable * 0.5), usable - TOP_GAP),
   };
 }
 
@@ -133,7 +140,7 @@ export function BottomSheet({
       aria-label={label}
       style={{ height }}
       className={cn(
-        "pointer-events-auto fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px))] z-20 flex flex-col rounded-t-[var(--radius-card)] border-t border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_-8px_24px_rgba(0,0,0,0.25)]",
+        "pointer-events-auto fixed inset-x-0 bottom-[calc(3.5rem+max(0.75rem,env(safe-area-inset-bottom,0px)))] z-20 flex flex-col rounded-t-[var(--radius-card)] border-t border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_-8px_24px_rgba(0,0,0,0.25)]",
         !dragging && !reduceMotion && "transition-[height] duration-200",
       )}
     >

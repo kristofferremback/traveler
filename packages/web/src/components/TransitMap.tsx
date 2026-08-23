@@ -48,6 +48,28 @@ function styleUrl(theme: Theme): string {
   return `${base}${base.includes("?") ? "&" : "?"}theme=${theme}`;
 }
 
+/**
+ * What the map falls back to when the basemap style cannot be fetched at all.
+ *
+ * Without a style MapLibre never fires `load`, our sources are never added, and the
+ * route is not drawn either: "the basemap failed" would silently mean "the map failed".
+ * A blank style with one background layer loads instantly and cannot itself fail, so
+ * the route, the markers and the notice all appear on a plain ground instead.
+ */
+function blankStyle(theme: Theme): maplibregl.StyleSpecification {
+  return {
+    version: 8,
+    sources: {},
+    layers: [
+      {
+        id: "background",
+        type: "background",
+        paint: { "background-color": theme === "light" ? "#e5e7eb" : "#0f172a" },
+      },
+    ],
+  };
+}
+
 function systemTheme(): Theme {
   return typeof window !== "undefined" &&
     window.matchMedia("(prefers-color-scheme: light)").matches
@@ -325,8 +347,14 @@ export function TransitMap({
       const message = String(e.error?.message ?? e.error ?? "");
       // A missing basemap should not take the route lines with it, but everything else
       // needs to reach the console rather than being quietly absorbed here.
-      if (/style|tile|source/i.test(message)) setStyleError(true);
-      else console.error("MapLibre:", message);
+      if (/style|tile|source/i.test(message)) {
+        setStyleError(true);
+        // The style itself failed to arrive (first load or a theme swap): give the map
+        // a style that cannot fail so `load`/`style.load` fire and the route is drawn.
+        if (/style/i.test(message) && !instance.isStyleLoaded()) {
+          instance.setStyle(blankStyle(appliedTheme.current));
+        }
+      } else console.error("MapLibre:", message);
     });
 
     instance.on("load", () => {

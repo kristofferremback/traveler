@@ -97,7 +97,8 @@
 
 .commute-map .maplibregl-ctrl-bottom-right,
 .commute-map .maplibregl-ctrl-bottom-left {
-  bottom: calc(15.5rem + env(safe-area-inset-bottom, 0px));
+  /* Tab bar (3.5rem + its safe-area padding) plus the sheet at peek (188px). */
+  bottom: calc(3.5rem + max(0.75rem, env(safe-area-inset-bottom, 0px)) + 188px);
 }
 
 @utility safe-bottom {
