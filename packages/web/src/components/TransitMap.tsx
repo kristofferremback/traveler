@@ -78,7 +78,7 @@ function ringsGeoJSON(hood: Neighbourhood | null): FeatureCollection {
       geometry: { type: "Polygon" as const, coordinates: iso.rings },
       properties: {
         minutes: iso.minutes,
-        opacity: 0.05 + index * 0.05,
+        opacity: 0.10 + index * 0.06,
         // Only the widest contour is stroked; outlining every one turns the
         // neighbourhood into a contour map of itself.
         outer: index === 0,
@@ -229,15 +229,16 @@ export function TransitMap({
         type: "line",
         source: RING_SOURCE,
         filter: ["==", ["get", "outer"], true],
-        paint: { "line-color": "#4c9be8", "line-width": 1.5, "line-opacity": 0.8 },
+        paint: { "line-color": "#4c9be8", "line-width": 2, "line-opacity": 0.9 },
       });
       instance.addLayer({
         id: "hood-walk-paths",
         type: "line",
         source: WALK_SOURCE,
         paint: {
-          "line-color": "#8a94a6",
-          "line-width": 1.5,
+          "line-color": "#1f2937",
+          "line-width": 2,
+          "line-opacity": 0.7,
           "line-dasharray": [1, 1.6],
         },
         layout: { "line-cap": "round", "line-join": "round" },
@@ -377,24 +378,44 @@ export function TransitMap({
       hoodStopsGeoJSON(hood),
     );
 
-    // Markers are DOM, so they are replaced wholesale rather than diffed; a
-    // neighbourhood is a few dozen stops and only changes when the place does.
-    for (const marker of hoodMarkers.current) marker.remove();
-    hoodMarkers.current = [];
-    if (!hood) return;
+    /**
+     * Place the markers, skipping a label that would land on one already placed.
+     *
+     * A symbol layer would do this collision test itself, but it needs glyphs the
+     * development basemap does not ship. Nearest-first, so the label that survives a
+     * cluster is the stop the walk is shortest to -- and it is redone on every camera
+     * move, because what collides depends on the zoom.
+     */
+    const render = () => {
+      for (const marker of hoodMarkers.current) marker.remove();
+      hoodMarkers.current = [];
+      if (!hood) return;
 
-    hoodMarkers.current.push(
-      new maplibregl.Marker({ element: placeMarker() })
-        .setLngLat([hood.lon, hood.lat])
-        .addTo(instance),
-    );
-    for (const stop of hood.stops) {
       hoodMarkers.current.push(
-        new maplibregl.Marker({ element: minuteLabel(stop.secondsTo), offset: [0, -14] })
-          .setLngLat([stop.lon, stop.lat])
+        new maplibregl.Marker({ element: placeMarker() })
+          .setLngLat([hood.lon, hood.lat])
           .addTo(instance),
       );
-    }
+
+      const placed: { x: number; y: number }[] = [];
+      for (const stop of [...hood.stops].sort((a, b) => a.secondsTo - b.secondsTo)) {
+        const at = instance.project([stop.lon, stop.lat]);
+        if (placed.some((p) => Math.abs(p.x - at.x) < 46 && Math.abs(p.y - at.y) < 20)) continue;
+        placed.push(at);
+        hoodMarkers.current.push(
+          new maplibregl.Marker({ element: minuteLabel(stop.secondsTo), offset: [0, -14] })
+            .setLngLat([stop.lon, stop.lat])
+            .addTo(instance),
+        );
+      }
+    };
+
+    render();
+    instance.on("moveend", render);
+    const detach = () => {
+      instance.off("moveend", render);
+    };
+    if (!hood) return detach;
 
     const bounds = boundsOfNeighbourhood(hood);
     if (bounds) {
@@ -404,6 +425,8 @@ export function TransitMap({
         animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       });
     }
+
+    return detach;
   }, [neighbourhood, ready]);
 
   const vehicleUrl = useMemo(
