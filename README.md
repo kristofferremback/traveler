@@ -172,18 +172,27 @@ put it on the public internet, which this app is not built for.
 
 ## Maps
 
-MapLibre with a Protomaps `.pmtiles` archive on the volume. No key, no tile server, and
-the browser reads only the ranges it needs.
+MapLibre, and no map key anywhere. `GET /api/map/style.json?theme=dark|light` answers
+with one of two basemaps.
+
+By default, [OpenFreeMap](https://openfreemap.org): keyless, no quota, no account, dark
+and positron flavours, and their styles carry the OpenStreetMap attribution they owe.
+The server caches the style JSON for six hours and passes it through untouched. If it
+cannot be fetched the endpoint answers 502 and the app says the ground is missing —
+there is no quiet second choice, because a basemap nobody picked is worse than a visibly
+absent one.
+
+To self-host instead, put a Protomaps `.pmtiles` archive on the volume and set
+`PMTILES_PATH`. The browser then reads only the byte ranges it needs, straight off the
+volume, and the style switches to a deliberately quiet vector one in both themes.
 
 ```bash
 pmtiles extract https://build.protomaps.com/<date>.pmtiles stockholm.pmtiles \
   --bbox=17.4,58.9,19.2,60.1
 ```
 
-Put it on the volume and set `PMTILES_PATH`. Without it the style falls back to
-OpenStreetMap raster tiles, which is fine for development and not allowed for an app in
-regular use under the OSMF tile policy. The fallback says so in the log and in the
-attribution.
+`VITE_MAP_STYLE` overrides the whole style URL at build time, for a basemap that is
+neither of these.
 
 ## Deploying
 
