@@ -46,14 +46,51 @@ a plain `http://192.168.x.x` does not: use `./run-tailscale.sh` to reach it from
 phone. A passkey is bound to the hostname in `AUTH_BASE_URL`, so changing that origin
 makes existing passkeys unusable and everyone needs a new invite.
 
-For agents and scripts, **Mer -> API-nycklar** creates a key, shown once:
+For agents and scripts, **Mer -> API-nycklar** creates a key, shown once. A key is a
+session, so it reaches every route the browser does; see "API for agents" below. Set
+`AUTH_SECRET` and `AUTH_BASE_URL` before deploying; see `.env.example`.
 
-```bash
-curl -H "x-api-key: $KEY" "http://localhost:3000/api/commute?from=...&to=..."
+## API for agents
+
+```
+GET /api/openapi.json
 ```
 
-A key is a session, so it reaches every route the browser does. Set `AUTH_SECRET` and
-`AUTH_BASE_URL` before deploying; see `.env.example`.
+An OpenAPI 3.1 document covering every route, parameter and response shape, public
+because it is the contract rather than data. It is generated from the same zod schemas
+the routes validate and build with, and a test fails the build if a route exists that
+the document does not describe, so it cannot drift from the instance serving it.
+
+Mint a key in the app under **Mer -> API-nycklar**, then send it as `x-api-key`:
+
+```bash
+curl -H "x-api-key: $KEY" \
+  "http://localhost:3000/api/commute?from=place:1&to=place:2"
+```
+
+`/api/commute` is the one an agent usually wants: door-to-door options with the walk at
+both ends, when to leave, and whether the departure is still catchable. `from` and `to`
+take a place id from `/api/places/search`, a bare `lat,lon`, or `place:<id>` for one of
+your own saved places.
+
+The limit is 120 requests a minute per key. Over that is a 429.
+
+To create a key from the command line instead of the app, call Better Auth with a
+session cookie. Its endpoints, and only its endpoints, also require an `Origin` header
+matching the instance:
+
+```bash
+curl -X POST "http://localhost:3000/api/auth/api-key/create" \
+  -H "content-type: application/json" \
+  -H "origin: http://localhost:3000" \
+  -H "cookie: better-auth.session_token=$COOKIE" \
+  -d '{"name":"my agent"}'
+```
+
+The `/stream` routes answer `text/event-stream` instead of JSON: events named
+`departures`, `vehicles` and `deviations` carry the same bodies their non-streaming
+counterparts return, `stream-error` reports an upstream failure that did not end the
+stream, and `ping` is a heartbeat every 25 seconds.
 
 ## Saved places
 
