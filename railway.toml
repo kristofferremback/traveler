@@ -1,0 +1,21 @@
+# Railway service configuration. Build from the Dockerfile, check liveness on /api/health
+# (readiness is /api/ready, which is deliberately not the healthcheck: the first boot
+# syncs SL's catalog for ~20 s, and a deploy should not fail because the catalog is
+# still downloading).
+#
+# Everything else the service needs is environment, set on the Railway service:
+#   DATABASE_PATH=/data/traveler.db      (a volume mounted at /data)
+#   AUTH_SECRET=<openssl rand -base64 32>
+#   AUTH_BASE_URL=https://<your domain>  (the passkey relying party; pick the final domain)
+#   NODE_ENV=production
+# See README, "Deploying".
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

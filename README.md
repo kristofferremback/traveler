@@ -255,10 +255,23 @@ index is built, and names what is missing. Anything that needs the catalog to ac
 work should wait on this. Waiting on `/api/health` instead gets you a server that
 returns `{"places": []}` for every search and no error.
 
-Railway, one service, Dockerfile build. Mount a volume and set `DATABASE_PATH` to a path
-on it, for example `/data/traveler.db`. On first boot the catalog is empty, so the
-server starts a sync in the background and answers health checks while it runs. It takes
-about five seconds.
+Railway, one service, Dockerfile build, configured by `railway.toml`. Checklist:
+
+1. New Railway project from this GitHub repository. The toml picks the Dockerfile and
+   the `/api/health` healthcheck.
+2. Add a volume and mount it at `/data`.
+3. Service variables: `DATABASE_PATH=/data/traveler.db`, `AUTH_SECRET` (`openssl rand
+   -base64 32`), `AUTH_BASE_URL=https://<your domain>`, `NODE_ENV=production`. Optional:
+   `ADMIN_TOKEN`, `TRAFIKLAB_GTFS_RT_KEY`.
+4. Put the final domain on the service before the first invite is followed there.
+   Passkeys are registered against `AUTH_BASE_URL`'s hostname; changing it later means a
+   new invite and a new passkey for each person.
+5. Deploy, then mint the first invite from the Railway shell: `bun run invite you@example.com`.
+
+The image sets `HOST=0.0.0.0`: the server binds loopback by default, which is right on a
+laptop and wrong in a container, where Railway's proxy reaches it over the container
+interface. On first boot the catalog is empty, so the server starts a sync in the
+background and answers health checks while it runs. It takes about twenty seconds.
 
 The catalog re-syncs every 24 hours, and also on boot if the last successful sync is
 older than that, since a service that redeploys daily would otherwise never reach a
