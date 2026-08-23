@@ -24,6 +24,7 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@types/bun": "latest",
+    "railway": "3.10.0",
     "typescript": "^5.9.2"
   }
 }

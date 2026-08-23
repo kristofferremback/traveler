@@ -262,18 +262,21 @@ index is built, and names what is missing. Anything that needs the catalog to ac
 work should wait on this. Waiting on `/api/health` instead gets you a server that
 returns `{"places": []}` for every search and no error.
 
-Railway, one service, Dockerfile build, configured by `railway.toml`. Checklist:
+Railway, one service, one volume, defined in `.railway/railway.ts` (Railway's
+infrastructure-as-code; `railway.json`/`railway.toml` are deprecated by Railway until
+December 2026). The file names the Dockerfile build, the `/api/health` healthcheck, the
+restart policy, the `/data` volume and the variables; secrets are `preserve()`d and live
+only in Railway.
 
-1. New Railway project from this GitHub repository. The toml picks the Dockerfile and
-   the `/api/health` healthcheck.
-2. Add a volume and mount it at `/data`.
-3. Service variables: `DATABASE_PATH=/data/traveler.db`, `AUTH_SECRET` (`openssl rand
-   -base64 32`), `AUTH_BASE_URL=https://<your domain>`, `NODE_ENV=production`. Optional:
-   `ADMIN_TOKEN`, `TRAFIKLAB_GTFS_RT_KEY`.
+1. `railway login`, then in the repo: `railway link` to the project (or `railway init`
+   for a new one) and `railway config plan` to see what differs from the file.
+2. `railway config apply` creates or updates the service and volume to match.
+3. Set the secrets once: `railway variable set AUTH_SECRET=$(openssl rand -base64 32)`
+   and `AUTH_BASE_URL=https://<your domain>`. Optional: `ADMIN_TOKEN`, `TRAFIKLAB_GTFS_RT_KEY`.
 4. Put the final domain on the service before the first invite is followed there.
    Passkeys are registered against `AUTH_BASE_URL`'s hostname; changing it later means a
    new invite and a new passkey for each person.
-5. Deploy, then mint the first invite from the Railway shell: `bun run invite you@example.com`.
+5. Mint the first invite from the Railway shell: `railway ssh -- bun run invite you@example.com`.
 
 The image sets `HOST=0.0.0.0`: the server binds loopback by default, which is right on a
 laptop and wrong in a container, where Railway's proxy reaches it over the container
