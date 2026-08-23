@@ -10,21 +10,54 @@ const int = z.coerce.number().int();
  * which stops count as reachable) is a function of these, so they are inputs to every
  * read rather than baked into stored data.
  */
+/**
+ * The bounds, kept apart from the defaults.
+ *
+ * Two schemas are built from these: the settled one, where every field has a default,
+ * and the override one, where an absent field stays absent. `.partial()` cannot produce
+ * the second -- it makes a field optional but leaves its default in place, so parsing an
+ * empty query would hand back all five defaults and quietly overwrite whatever the
+ * account had stored.
+ */
+const speedKmh = numeric.min(2).max(10);
+const maxWalkMinutes = int.min(1).max(45);
+/** Minutes a change costs in the ranking. One bus beats two at roughly the same time. */
+const transferPenaltyMinutes = numeric.min(0).max(60);
+/** 1 = a minute walking weighs the same as a minute riding. Exposed, not used to tune yet. */
+const walkMultiplier = numeric.min(0).max(5);
+/** Minutes of slack before a departure counts as "you can still make it". */
+const catchBufferMinutes = numeric.min(0).max(15);
+
 export const WalkSettings = z.object({
-  speedKmh: numeric.min(2).max(10).default(6),
-  maxWalkMinutes: int.min(1).max(45).default(20),
+  speedKmh: speedKmh.default(6),
+  maxWalkMinutes: maxWalkMinutes.default(20),
 });
 export type WalkSettings = z.infer<typeof WalkSettings>;
 
-export const CommuteSettings = WalkSettings.extend({
-  /** Minutes a change costs in the ranking. One bus beats two at roughly the same time. */
-  transferPenaltyMinutes: numeric.min(0).max(60).default(5),
-  /** 1 = a minute walking weighs the same as a minute riding. Exposed, not used to tune yet. */
-  walkMultiplier: numeric.min(0).max(5).default(1),
-  /** Minutes of slack before a departure counts as "you can still make it". */
-  catchBufferMinutes: numeric.min(0).max(15).default(1),
+export const CommuteSettings = z.object({
+  speedKmh: speedKmh.default(6),
+  maxWalkMinutes: maxWalkMinutes.default(20),
+  transferPenaltyMinutes: transferPenaltyMinutes.default(5),
+  walkMultiplier: walkMultiplier.default(1),
+  catchBufferMinutes: catchBufferMinutes.default(1),
 });
 export type CommuteSettings = z.infer<typeof CommuteSettings>;
+
+/** The same fields with nothing filled in: what a caller actually said, and no more. */
+export const WalkSettingsOverrides = z.object({
+  speedKmh: speedKmh.optional(),
+  maxWalkMinutes: maxWalkMinutes.optional(),
+});
+export type WalkSettingsOverrides = z.infer<typeof WalkSettingsOverrides>;
+
+export const CommuteSettingsOverrides = z.object({
+  speedKmh: speedKmh.optional(),
+  maxWalkMinutes: maxWalkMinutes.optional(),
+  transferPenaltyMinutes: transferPenaltyMinutes.optional(),
+  walkMultiplier: walkMultiplier.optional(),
+  catchBufferMinutes: catchBufferMinutes.optional(),
+});
+export type CommuteSettingsOverrides = z.infer<typeof CommuteSettingsOverrides>;
 
 /**
  * A stop point reachable on foot from a place, with the walk described in facts that do
@@ -94,7 +127,7 @@ export const PlaceRef = z.string().trim().min(1).max(400);
  * that order, so a link that pins a walking speed keeps working and an agent that sends
  * none gets the same answer the app shows.
  */
-export const CommuteQuery = CommuteSettings.partial().extend({
+export const CommuteQuery = CommuteSettingsOverrides.extend({
   from: PlaceRef,
   to: PlaceRef,
   /** ISO instant to plan from. Absent means now. */

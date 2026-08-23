@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CommuteSettings, WalkSettings } from "./commute.ts";
+import { CommuteSettings, CommuteSettingsOverrides, WalkSettingsOverrides } from "./commute.ts";
 import { Instant } from "./domain.ts";
 
 /**
@@ -75,7 +75,11 @@ export type SavedPlacePatch = z.infer<typeof SavedPlacePatch>;
 export const UserSettings = CommuteSettings;
 export type UserSettings = z.infer<typeof UserSettings>;
 
-export const UserSettingsPatch = CommuteSettings.partial();
+/**
+ * A patch is only the fields it names. Anything else keeps the value it had, which is
+ * what makes "save this one field when it loses focus" safe.
+ */
+export const UserSettingsPatch = CommuteSettingsOverrides;
 export type UserSettingsPatch = z.infer<typeof UserSettingsPatch>;
 
 /**
@@ -83,7 +87,7 @@ export type UserSettingsPatch = z.infer<typeof UserSettingsPatch>;
  * override the two that change what is drawn, so a map can offer "show 30 minutes"
  * without writing that back to the account.
  */
-export const PlaceNeighbourhoodQuery = WalkSettings.partial().extend({
+export const PlaceNeighbourhoodQuery = WalkSettingsOverrides.extend({
   isochrones: z
     .enum(["true", "false", "1", "0"])
     .default("false")
