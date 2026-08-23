@@ -12,6 +12,7 @@ import { map } from "./routes/map.ts";
 import { commute } from "./routes/commute.ts";
 import { account } from "./routes/account.ts";
 import { savedPlaces } from "./routes/savedPlaces.ts";
+import { openapi } from "./routes/openapi.ts";
 import { auth } from "./auth/auth.ts";
 import { apiGate } from "./auth/middleware.ts";
 
@@ -25,8 +26,9 @@ export const hasWeb = existsSync(webDist);
  * Every route this server answers, assembled in one place.
  *
  * A function rather than a module-level app so the routing table can be built without
- * starting a listener: `index.ts` calls it and serves the result, and a test can read
- * `app.routes` without a port.
+ * starting a listener: `index.ts` calls it and serves the result, and the OpenAPI drift
+ * test calls it and reads `app.routes` to check that the published document names every
+ * route that exists.
  */
 export function createApp(): Hono {
   const app = new Hono();
@@ -65,6 +67,7 @@ export function createApp(): Hono {
   app.use("/api/*", apiGate);
 
   app.route("/api", health);
+  app.route("/api", openapi);
   app.route("/api/places", places);
   app.route("/api", transit);
   app.route("/api/map", map);

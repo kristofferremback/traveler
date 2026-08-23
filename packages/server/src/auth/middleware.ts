@@ -20,8 +20,17 @@ declare module "hono" {
  * The catalog sync endpoint is here because it carries its own credential: it exists
  * only when ADMIN_TOKEN is set and checks it on every call, and a cron job holding that
  * token has no session to offer. Requiring both would be a second lock on the same door.
+ *
+ * The OpenAPI document is here because it is the description of the API rather than data
+ * from it, and an agent that must authenticate before it can read how to authenticate is
+ * stuck. It names routes and shapes, never anything an account owns.
  */
-const PUBLIC_API = new Set(["/api/health", "/api/ready", "/api/catalog/sync"]);
+const PUBLIC_API = new Set([
+  "/api/health",
+  "/api/ready",
+  "/api/catalog/sync",
+  "/api/openapi.json",
+]);
 
 function isPublic(path: string): boolean {
   // The auth endpoints are how you get a session, so they cannot require one.
