@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { env, isProd, VERSION } from "./env.ts";
+import { env, isProd, usingDevAuthSecret, VERSION } from "./env.ts";
 import { logger } from "./lib/log.ts";
 import { AppError, describe } from "./lib/errors.ts";
 import { closeDb } from "./db/index.ts";
@@ -12,6 +12,9 @@ import { transit } from "./routes/transit.ts";
 import { health } from "./routes/health.ts";
 import { map } from "./routes/map.ts";
 import { commute } from "./routes/commute.ts";
+import { account } from "./routes/account.ts";
+import { auth } from "./auth/auth.ts";
+import { apiGate } from "./auth/middleware.ts";
 
 const log = logger("server");
 
@@ -32,11 +35,30 @@ app.use("*", async (c, next) => {
   }
 });
 
+/**
+ * Sign-in, passkeys and API keys, handled by Better Auth.
+ *
+ * Mounted before the gate: these are how a caller gets a session, so requiring one here
+ * would lock everybody out. `apiGate` skips /api/auth/* for the same reason.
+ */
+app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+
+/**
+ * The gate.
+ *
+ * Everything under /api needs a session cookie or an API key, except the two probes and
+ * the auth endpoints themselves. Registered before the routes so a route added later is
+ * behind it without anyone remembering to do anything. The app shell and its assets are
+ * served below and stay public: the sign-in page has to load.
+ */
+app.use("/api/*", apiGate);
+
 app.route("/api", health);
 app.route("/api/places", places);
 app.route("/api", transit);
 app.route("/api/map", map);
 app.route("/api", commute);
+app.route("/api", account);
 
 /**
  * Unmatched API paths are a 404, not the app shell.
@@ -125,6 +147,13 @@ log.info(`frontend: ${hasWeb ? webDist : "not built"}`);
 log.info(
   `vehicle positions: ${env.TRAFIKLAB_GTFS_RT_KEY ? "enabled" : "disabled (no TRAFIKLAB_GTFS_RT_KEY)"}`,
 );
+log.info(`auth base url: ${env.AUTH_BASE_URL}`);
+if (usingDevAuthSecret) {
+  // Sessions, invite tokens and API keys are all signed with a value that is in the
+  // source. Fine on a laptop, and the reason NODE_ENV=production refuses to start
+  // without a real one.
+  log.warn("AUTH_SECRET is unset -- using the built-in development secret");
+}
 
 function shutdown(signal: string) {
   log.info(`${signal} received, shutting down`);
