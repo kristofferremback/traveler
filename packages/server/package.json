@@ -6,10 +6,14 @@
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
-    "sync": "bun src/cli/sync.ts"
+    "sync": "bun src/cli/sync.ts",
+    "invite": "bun src/cli/invite.ts"
   },
   "dependencies": {
+    "@better-auth/api-key": "1.7.1",
+    "@better-auth/passkey": "1.7.1",
     "@traveler/shared": "workspace:*",
+    "better-auth": "1.7.1",
     "gtfs-realtime-bindings": "^1.1.1",
     "hono": "^4.9.0",
     "zod": "^4.1.5"

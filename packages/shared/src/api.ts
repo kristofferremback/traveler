@@ -173,6 +173,46 @@ export const HealthResponse = z.object({
 });
 export type HealthResponse = z.infer<typeof HealthResponse>;
 
+// --- Account ----------------------------------------------------------------
+
+/** Body of POST /api/invites. The name is only used for the account it may create. */
+export const InviteRequest = z.object({
+  email: z.string().trim().email().max(254),
+  name: z.string().trim().max(120).optional(),
+});
+export type InviteRequest = z.infer<typeof InviteRequest>;
+
+export const InviteResponse = z.object({
+  email: z.string(),
+  /** The whole invite: a one-time link, not emailed anywhere. */
+  url: z.string(),
+  expiresAt: z.string(),
+});
+export type InviteResponse = z.infer<typeof InviteResponse>;
+
+export const MeResponse = z.object({
+  user: z.object({ id: z.string(), email: z.string(), name: z.string() }),
+  passkeys: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string().nullable(),
+      createdAt: z.string().nullable(),
+    }),
+  ),
+  apiKeys: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string().nullable(),
+      /** The first characters of the key, the only part stored in the clear. */
+      start: z.string().nullable(),
+      createdAt: z.string().nullable(),
+      lastRequest: z.string().nullable(),
+      expiresAt: z.string().nullable(),
+    }),
+  ),
+});
+export type MeResponse = z.infer<typeof MeResponse>;
+
 export const ApiError = z.object({
   error: z.object({
     code: z.string(),
