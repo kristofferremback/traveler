@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { existsSync, statSync } from "node:fs";
 import { env } from "../env.ts";
+import { MapStyleQuery } from "@traveler/shared";
+import { parseQuery } from "./validate.ts";
 import { logger } from "../lib/log.ts";
 import { describe } from "../lib/errors.ts";
 
@@ -143,7 +145,9 @@ function pmtilesStyle(origin: string, theme: Theme) {
 }
 
 map.get("/style.json", async (c) => {
-  const theme: Theme = c.req.query("theme") === "light" ? "light" : "dark";
+  // The same schema the OpenAPI document describes, so a mistyped theme is the 400 the
+  // document promises rather than a quiet dark map.
+  const { theme } = parseQuery(MapStyleQuery, c);
   const path = pmtilesAvailable();
 
   if (path) {

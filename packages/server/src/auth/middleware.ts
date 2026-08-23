@@ -37,6 +37,12 @@ function isPublic(path: string): boolean {
   return PUBLIC_API.has(path) || path === "/api/auth" || path.startsWith("/api/auth/");
 }
 
+function isRateLimited(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const e = err as { statusCode?: unknown; status?: unknown };
+  return e.statusCode === 429 || e.status === "TOO_MANY_REQUESTS";
+}
+
 /**
  * The gate. A session cookie or an `x-api-key` header, or nothing gets through.
  *
@@ -47,7 +53,19 @@ function isPublic(path: string): boolean {
 export const requireAuth: MiddlewareHandler = async (c, next) => {
   const session = await auth.api
     .getSession({ headers: c.req.raw.headers })
-    .catch(() => null);
+    .catch((err: unknown) => {
+      // The api-key plugin also throws when a valid key is over its rate limit. That is
+      // not "who are you" but "slow down", and an agent that sees 401 for it will go and
+      // mint a new key instead of waiting a minute.
+      if (isRateLimited(err)) {
+        throw new AppError(
+          "rate_limited",
+          "Too many requests for this API key. The limit is 120 a minute.",
+          429,
+        );
+      }
+      return null;
+    });
 
   if (!session) {
     throw new AppError(

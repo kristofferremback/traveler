@@ -730,6 +730,28 @@ test.describe("sign-in and the gate", () => {
     await wrong.dispose();
   });
 
+  test("an API key over its rate limit gets a 429, not a 401", async ({ request, playwright, baseURL }) => {
+    test.setTimeout(120_000);
+    // The api-key plugin throws for both an unknown key and an exhausted one; the gate has
+    // to tell them apart, or an agent that is merely too fast is told its key is bad.
+    const created = await request.post("/api/auth/api-key/create", {
+      data: { name: "e2e-rate" },
+      headers: { origin: baseURL! },
+    });
+    const key = (await created.json()).key as string;
+    const agent = await playwright.request.newContext({ baseURL, extraHTTPHeaders: { "x-api-key": key } });
+    let last = 0;
+    for (let i = 0; i < 125 && last !== 429; i++) {
+      last = (await agent.get("/api/me")).status();
+      expect([200, 429]).toContain(last);
+    }
+    expect(last).toBe(429);
+    const refused = await agent.get("/api/me");
+    expect(refused.status()).toBe(429);
+    expect((await refused.json()).error.code).toBe("rate_limited");
+    await agent.dispose();
+  });
+
   test("the settings page hands over a working invite link and a QR code", async ({
     page,
     browser,

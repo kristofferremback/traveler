@@ -221,7 +221,7 @@ function operationId(route: RouteDoc): string {
 
 const DESCRIPTION = `Traveler is a journey planner for Stockholm's public transport, built on SL's own APIs.
 
-This document is generated from the schemas the server validates with, so it cannot drift from the running instance.
+This document is generated from the same zod schemas the server validates with, and a test fails the build when a route exists that the document does not name. The pairing of route and schema is still written by hand, so read a surprising field with that in mind.
 
 **Getting a key.** Sign in, then **Mer → API-nycklar** creates one; it is shown once. Send it as \`x-api-key\`. A key is a session, so it reaches every route a browser does. The browser itself uses the \`better-auth.session_token\` cookie instead, and both are accepted everywhere.
 

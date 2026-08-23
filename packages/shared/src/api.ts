@@ -277,3 +277,9 @@ export type StreamEvent =
   | { type: "vehicles"; data: VehiclesResponse }
   | { type: "deviations"; data: DeviationsResponse }
   | { type: "error"; data: StreamError };
+
+/** Which flavour of the basemap style to return. Anything else is a 400, not a silent dark. */
+export const MapStyleQuery = z.object({
+  theme: z.enum(["dark", "light"]).default("dark"),
+});
+export type MapStyleQuery = z.infer<typeof MapStyleQuery>;

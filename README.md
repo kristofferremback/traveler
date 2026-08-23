@@ -59,7 +59,9 @@ GET /api/openapi.json
 An OpenAPI 3.1 document covering every route, parameter and response shape, public
 because it is the contract rather than data. It is generated from the same zod schemas
 the routes validate and build with, and a test fails the build if a route exists that
-the document does not describe, so it cannot drift from the instance serving it.
+the document does not describe. The pairing of each route with its schema is still
+written by hand in `packages/server/src/openapi/registry.ts`, so that file is the one to
+edit when a route changes shape.
 
 Mint a key in the app under **Mer -> API-nycklar**, then send it as `x-api-key`:
 

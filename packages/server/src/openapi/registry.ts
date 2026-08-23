@@ -13,6 +13,7 @@ import {
   JourneyQuery,
   JourneyResponse,
   LocateResponse,
+  MapStyleQuery,
   MeResponse,
   NearbyQuery,
   Neighbourhood,
@@ -95,12 +96,6 @@ const MapStyle = z
   })
   .describe("A MapLibre GL style document.");
 
-const MapStyleQuery = z.object({
-  theme: z
-    .enum(["dark", "light"])
-    .default("dark")
-    .describe("Which flavour of the basemap to return."),
-});
 
 /** This document. Loose, because it is an OpenAPI document and OpenAPI describes itself. */
 const OpenApiDocumentSchema = z
