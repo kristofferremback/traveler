@@ -13,6 +13,7 @@ import { health } from "./routes/health.ts";
 import { map } from "./routes/map.ts";
 import { commute } from "./routes/commute.ts";
 import { account } from "./routes/account.ts";
+import { savedPlaces } from "./routes/savedPlaces.ts";
 import { auth } from "./auth/auth.ts";
 import { apiGate } from "./auth/middleware.ts";
 
@@ -59,6 +60,9 @@ app.route("/api", transit);
 app.route("/api/map", map);
 app.route("/api", commute);
 app.route("/api", account);
+// After /api/places: the search routes there are literal paths, and this one's
+// `/places/:id` would otherwise answer for `/places/search`.
+app.route("/api", savedPlaces);
 
 /**
  * Unmatched API paths are a 404, not the app shell.
