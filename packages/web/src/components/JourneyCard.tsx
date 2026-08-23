@@ -1,83 +1,14 @@
 import { useState } from "react";
-import type { Journey, JourneyLeg } from "@traveler/shared";
-import { ChevronDown, Footprints, TriangleAlert } from "lucide-react";
+import type { Journey } from "@traveler/shared";
+import { ChevronDown, Footprints } from "lucide-react";
 import { Link } from "react-router-dom";
-import { dayLabel, formatDelay, formatDuration, formatTime, minutesUntil } from "@/lib/format";
+import { dayLabel, formatDuration, formatTime, minutesUntil } from "@/lib/format";
 import { MODE_LABEL } from "@/lib/modes";
+import { JourneyLegs } from "./JourneyLegs";
 import { LineBadge } from "./LineBadge";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { cn } from "@/lib/utils";
-
-function legDelay(leg: JourneyLeg): number | null {
-  if (!leg.origin.scheduled || !leg.origin.expected) return null;
-  return Math.round(
-    (new Date(leg.origin.expected).getTime() - new Date(leg.origin.scheduled).getTime()) / 1000,
-  );
-}
-
-/** Walking legs collapse to a single line; nobody needs a card for "walk 4 minutes". */
-function LegRow({ leg }: { leg: JourneyLeg }) {
-  const delay = formatDelay(legDelay(leg));
-
-  if (leg.mode === "WALK") {
-    return (
-      <li className="flex items-center gap-3 py-2 text-sm text-[var(--color-muted)]">
-        <Footprints className="size-4 shrink-0" aria-hidden />
-        <span>
-          Gå {formatDuration(leg.durationSeconds)}
-          {leg.destination.name ? ` till ${leg.destination.name}` : ""}
-        </span>
-      </li>
-    );
-  }
-
-  return (
-    <li className="flex gap-3 py-2">
-      <div className="flex flex-col items-center gap-1 pt-0.5">
-        <LineBadge line={leg.line} mode={leg.mode} />
-      </div>
-      <div className="min-w-0 flex-1 text-sm">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="font-medium tabular-nums">
-            {formatTime(leg.origin.expected ?? leg.origin.scheduled)}
-          </span>
-          <span className="truncate">{leg.origin.name}</span>
-          {leg.origin.platform ? (
-            <Badge variant="outline">Läge {leg.origin.platform}</Badge>
-          ) : null}
-          {delay ? <Badge variant="warn">{delay}</Badge> : null}
-        </div>
-
-        {leg.towards ? (
-          <p className="mt-0.5 text-xs text-[var(--color-muted)]">
-            Mot {leg.towards}
-            {leg.intermediateStops.length > 0
-              ? ` · ${leg.intermediateStops.length} hållplatser`
-              : ""}
-          </p>
-        ) : null}
-
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
-          <span className="font-medium tabular-nums">
-            {formatTime(leg.destination.expected ?? leg.destination.scheduled)}
-          </span>
-          <span className="truncate">{leg.destination.name}</span>
-          {leg.destination.platform ? (
-            <Badge variant="outline">Läge {leg.destination.platform}</Badge>
-          ) : null}
-        </div>
-
-        {leg.notes.map((note) => (
-          <p key={note} className="mt-1 flex gap-1.5 text-xs text-[var(--color-warn)]">
-            <TriangleAlert className="mt-0.5 size-3 shrink-0" aria-hidden />
-            {note}
-          </p>
-        ))}
-      </div>
-    </li>
-  );
-}
 
 export function JourneyCard({
   journey,
@@ -159,11 +90,7 @@ export function JourneyCard({
 
       {expanded ? (
         <div className="border-t border-[var(--color-border)] px-4 pb-3">
-          <ul className="divide-y divide-[var(--color-border)]">
-            {journey.legs.map((leg) => (
-              <LegRow key={leg.index} leg={leg} />
-            ))}
-          </ul>
+          <JourneyLegs journey={journey} />
           {journey.legs[0]?.origin.siteId ? (
             <Link
               to={`/stop/${journey.legs[0].origin.siteId}`}

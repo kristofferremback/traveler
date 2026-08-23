@@ -60,7 +60,7 @@ export function StopPage() {
             the board reports it, the action is absent rather than broken. */}
         {gid ? (
           <Button variant="outline" size="sm" asChild>
-            <Link to={`/?to=${encodeURIComponent(gid)}`}>
+            <Link to={`/plan?to=${encodeURIComponent(gid)}`}>
               <Navigation />
               Res hit
             </Link>

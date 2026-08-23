@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AlertTriangle, MapPin, Search, Settings, TriangleAlert } from "lucide-react";
+import { CommutePage } from "./routes/CommutePage";
 import { PlanPage } from "./routes/PlanPage";
 import { StopPage } from "./routes/StopPage";
 import { NearbyPage } from "./routes/NearbyPage";
@@ -121,7 +122,8 @@ export function App() {
     <ErrorBoundary>
       <main className="min-h-dvh">
         <Routes>
-          <Route path="/" element={<PlanPage />} />
+          <Route path="/" element={<CommutePage />} />
+          <Route path="/plan" element={<PlanPage />} />
           <Route path="/stop/:siteId" element={<StopPage />} />
           <Route path="/nearby" element={<NearbyPage />} />
           <Route path="/disruptions" element={<DisruptionsPage />} />

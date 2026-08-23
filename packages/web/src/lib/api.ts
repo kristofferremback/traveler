@@ -1,4 +1,5 @@
 import type {
+  CommuteResponse,
   CommuteSettings,
   DeparturesResponse,
   DeviationsResponse,
@@ -136,6 +137,16 @@ export const api = {
     },
     signal?: AbortSignal,
   ) => get<JourneyResponse>("/journeys", params, signal),
+
+  /**
+   * Door-to-door options between two places. `from`/`to` are place ids, "lat,lon", or
+   * "place:<id>" for a saved place. `paths` decides how much drawn geometry comes back;
+   * the default carries only the recommended option's.
+   */
+  commute: (
+    params: { from: string; to: string; when?: string; paths?: "recommended" | "all" | "none" },
+    signal?: AbortSignal,
+  ) => get<CommuteResponse>("/commute", params, signal),
 
   deviations: (
     params: { site?: string; line?: string; modes?: string; minSeverity?: string },
