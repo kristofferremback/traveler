@@ -79,6 +79,27 @@
   }
 }
 
+/*
+ * The commute map is the whole screen, with the app's own controls floating over it.
+ *
+ * MapLibre's controls are 29 px, which is fine for a mouse and not for a thumb, and its
+ * attribution sits exactly where the sheet does. Both are moved rather than hidden: the
+ * attribution is the basemap's licence, not decoration.
+ */
+.commute-map .maplibregl-ctrl-top-right {
+  top: calc(3.75rem + env(safe-area-inset-top, 0px));
+}
+
+.commute-map .maplibregl-ctrl-group button {
+  width: 44px;
+  height: 44px;
+}
+
+.commute-map .maplibregl-ctrl-bottom-right,
+.commute-map .maplibregl-ctrl-bottom-left {
+  bottom: calc(15.5rem + env(safe-area-inset-bottom, 0px));
+}
+
 @utility safe-bottom {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
