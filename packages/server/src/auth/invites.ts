@@ -98,15 +98,43 @@ export interface InviteRow {
   expires_at: string;
 }
 
-/** The caller's own unexpired invites, newest first. */
+/** The token inside an invite link, which is also the verification row's identifier. */
+function tokenOf(url: string): string | null {
+  try {
+    return new URL(url).searchParams.get("token");
+  } catch {
+    return null;
+  }
+}
+
+const verificationExists = db.query<{ n: number }, [string]>(
+  `SELECT COUNT(*) AS n FROM verification WHERE identifier = ?1`,
+);
+const markUsed = db.query(`UPDATE invites SET used_at = ?1 WHERE id = ?2`);
+
+/**
+ * The caller's own invites that can still be followed, newest first.
+ *
+ * Better Auth consumes the verification row when a link is used and says nothing to us,
+ * so "spent" is discovered here: a link whose token no longer has a row is marked used
+ * and left out. Listing a link that would only answer "already used" helps nobody.
+ */
 export function listInvites(createdBy: string): InviteRow[] {
-  return db
+  const now = new Date().toISOString();
+  const rows = db
     .query(
       `SELECT id, email, url, created_at, expires_at
          FROM invites
-        WHERE created_by = $createdBy AND expires_at > $now
+        WHERE created_by = $createdBy AND expires_at > $now AND used_at IS NULL
         ORDER BY created_at DESC
         LIMIT 50`,
     )
-    .all({ createdBy, now: new Date().toISOString() }) as InviteRow[];
+    .all({ createdBy, now }) as InviteRow[];
+
+  return rows.filter((row) => {
+    const token = tokenOf(row.url);
+    const live = token !== null && (verificationExists.get(token)?.n ?? 0) > 0;
+    if (!live) markUsed.run(now, row.id);
+    return live;
+  });
 }

@@ -14,8 +14,14 @@ declare module "hono" {
   }
 }
 
-/** Paths under /api that answer without a session. */
-const PUBLIC_API = new Set(["/api/health", "/api/ready"]);
+/**
+ * Paths under /api that answer without a session.
+ *
+ * The catalog sync endpoint is here because it carries its own credential: it exists
+ * only when ADMIN_TOKEN is set and checks it on every call, and a cron job holding that
+ * token has no session to offer. Requiring both would be a second lock on the same door.
+ */
+const PUBLIC_API = new Set(["/api/health", "/api/ready", "/api/catalog/sync"]);
 
 function isPublic(path: string): boolean {
   // The auth endpoints are how you get a session, so they cannot require one.

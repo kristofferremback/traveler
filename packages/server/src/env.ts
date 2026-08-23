@@ -106,6 +106,15 @@ if (isProd && !parsed.AUTH_SECRET) {
   );
 }
 
+if (isProd && !parsed.AUTH_BASE_URL) {
+  // Without it, invite links point at localhost and every passkey is registered for a
+  // hostname nobody reaches the instance on. Better to refuse to start than to mint
+  // accounts that cannot be used.
+  throw new Error(
+    "AUTH_BASE_URL is required when NODE_ENV=production, e.g. https://traveler.example.com",
+  );
+}
+
 /** True when the dev fallback is in use; index.ts and the CLI warn about it at boot. */
 export const usingDevAuthSecret = !parsed.AUTH_SECRET;
 

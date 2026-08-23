@@ -432,6 +432,23 @@ test.describe("sign-in and the gate", () => {
     await anon.dispose();
   });
 
+  test("drops a spent invite from the inviter's list", async ({ request, playwright, baseURL }) => {
+    // Better Auth consumes the link's token silently; the list has to notice, because a
+    // link that only answers "already used" is not something worth resending.
+    const created = await request.post("/api/invites", { data: { email: uniqueEmail() } });
+    expect(created.status()).toBe(201);
+    const { url } = (await created.json()) as { url: string };
+    const before = (await (await request.get("/api/invites")).json()) as { invites: { url: string }[] };
+    expect(before.invites.map((i) => i.url)).toContain(url);
+
+    const invited = await playwright.request.newContext({ baseURL });
+    expect((await invited.get(url, { maxRedirects: 0 })).status()).toBe(302);
+    await invited.dispose();
+
+    const after = (await (await request.get("/api/invites")).json()) as { invites: { url: string }[] };
+    expect(after.invites.map((i) => i.url)).not.toContain(url);
+  });
+
   test("accepts an API key on the API and refuses a wrong one", async ({
     request,
     playwright,
