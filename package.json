@@ -17,7 +17,7 @@
     "typecheck:server": "tsc -p packages/server",
     "typecheck:web": "tsc -p packages/web",
     "test:e2e": "playwright test",
-    "test": "bun test packages",
+    "test": "DATABASE_PATH=:memory: LOG_LEVEL=warn bun test packages",
     "check": "bun run typecheck && bun run test && bun run test:e2e"
   },
   "devDependencies": {

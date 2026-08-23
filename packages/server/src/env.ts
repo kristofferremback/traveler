@@ -39,6 +39,12 @@ const Env = z.object({
     .min(16, "ADMIN_TOKEN must be at least 16 characters to be worth having")
     .optional()
     .transform((v) => (v ? v : undefined)),
+  /**
+   * Pedestrian routing. The public FOSSGIS server is free under a fair-use policy of one
+   * request per second per client, which the client enforces. Point this at your own
+   * Valhalla if that ever stops being enough.
+   */
+  VALHALLA_URL: z.string().url().default("https://valhalla1.openstreetmap.de"),
   /** Directory of built frontend assets. Served only when it exists. */
   WEB_DIST: z.string().default("../web/dist"),
   /** Optional .pmtiles basemap on the persistent volume, served with range requests. */

@@ -1,0 +1,178 @@
+import { describe, expect, test } from "bun:test";
+import type { CommuteSettings, Journey, NeighbourStop } from "@traveler/shared";
+import { foldDrafts, type Draft } from "../commute.ts";
+
+const settings: CommuteSettings = {
+  speedKmh: 6,
+  maxWalkMinutes: 20,
+  transferPenaltyMinutes: 5,
+  walkMultiplier: 1,
+  catchBufferMinutes: 1,
+};
+
+const T0 = Date.parse("2026-08-24T15:30:00Z");
+const min = (n: number) => n * 60_000;
+
+function stop(id: number, name: string, walkSeconds: number): NeighbourStop {
+  return {
+    stopPointId: id,
+    siteId: id,
+    siteGid: `909100100000${id}`,
+    name,
+    mode: "BUS",
+    lat: 59.3,
+    lon: 18.1,
+    metres: walkSeconds,
+    ascentTo: 0,
+    ascentFrom: 0,
+    secondsTo: walkSeconds,
+    secondsFrom: walkSeconds,
+    path: [],
+  };
+}
+
+const jarlaberg = stop(1, "Jarlaberg", 0);
+const cylinder = stop(2, "Cylindervägen", 6 * 60);
+const trafikplats = stop(3, "Nacka trafikplats", 9 * 60);
+
+const journey: Journey = {
+  id: "j",
+  departure: null,
+  arrival: null,
+  durationSeconds: 0,
+  realtimeDurationSeconds: null,
+  interchanges: 0,
+  walkSeconds: 0,
+  legs: [],
+  modes: ["BUS"],
+  disrupted: false,
+};
+
+function draft(partial: Partial<Draft> & Pick<Draft, "vehicleKey" | "ourStop">): Draft {
+  const boardAt = partial.boardAt ?? T0 + min(5);
+  const alightAt = partial.alightAt ?? boardAt + min(20);
+  return {
+    journey,
+    firstTripId: partial.vehicleKey.split(">")[0] ?? null,
+    leaveAt: boardAt - partial.ourStop.secondsTo * 1000,
+    boardAt,
+    alightAt,
+    arriveAt: alightAt,
+    ourWalk: partial.ourStop.secondsTo,
+    farWalk: 0,
+    transfers: partial.vehicleKey.split(">").length - 1,
+    ...partial,
+  };
+}
+
+describe("foldDrafts", () => {
+  test("the same bus boarded at two stops is one row, boarded where you leave latest", () => {
+    // 443 run 133: at Cylindervägen 17:34, at Jarlaberg 17:35. Same bus, same arrival.
+    const atCylinder = draft({
+      vehicleKey: "443:133",
+      ourStop: cylinder,
+      boardAt: T0 + min(4),
+      alightAt: T0 + min(30),
+    });
+    const atJarlaberg = draft({
+      vehicleKey: "443:133",
+      ourStop: jarlaberg,
+      boardAt: T0 + min(5),
+      alightAt: T0 + min(30),
+    });
+    const options = foldDrafts([atCylinder, atJarlaberg], "origin", settings, T0, T0);
+    expect(options).toHaveLength(1);
+    expect(options[0]!.origin.stop?.name).toBe("Jarlaberg");
+    expect(options[0]!.alternatives.map((a) => a.stop.name)).toEqual(["Cylindervägen"]);
+  });
+
+  test("arriving, you get off where the walk is shortest, never early", () => {
+    // Getting off at Cylindervägen would be home 2 minutes sooner on paper.
+    const early = draft({
+      vehicleKey: "443:133",
+      ourStop: { ...cylinder, secondsFrom: 6 * 60 },
+      boardAt: T0 + min(5),
+      alightAt: T0 + min(24),
+      arriveAt: T0 + min(30),
+      ourWalk: 6 * 60,
+    });
+    const through = draft({
+      vehicleKey: "443:133",
+      ourStop: jarlaberg,
+      boardAt: T0 + min(5),
+      alightAt: T0 + min(32),
+      arriveAt: T0 + min(32),
+      ourWalk: 0,
+    });
+    const options = foldDrafts([early, through], "destination", settings, T0, T0);
+    expect(options).toHaveLength(1);
+    expect(options[0]!.destination.stop?.name).toBe("Jarlaberg");
+    expect(options[0]!.arriveAt).toBe(new Date(T0 + min(32)).toISOString());
+    expect(options[0]!.alternatives[0]?.stop.name).toBe("Cylindervägen");
+  });
+
+  test("a change off a bus that gets you there on its own is dropped unless it beats the penalty", () => {
+    const direct = draft({
+      vehicleKey: "443:133",
+      ourStop: jarlaberg,
+      boardAt: T0 + min(5),
+      alightAt: T0 + min(35),
+      arriveAt: T0 + min(35),
+    });
+    // 443 then 465: arrives 3 minutes earlier, costs a change worth 5.
+    const pointless = draft({
+      vehicleKey: "443:133>465:9",
+      ourStop: jarlaberg,
+      boardAt: T0 + min(5),
+      alightAt: T0 + min(32),
+      arriveAt: T0 + min(32),
+      transfers: 1,
+    });
+    // 443 then the metro: arrives 12 minutes earlier, which does pay for the change.
+    const worthwhile = draft({
+      vehicleKey: "443:133>18:77",
+      ourStop: jarlaberg,
+      boardAt: T0 + min(5),
+      alightAt: T0 + min(23),
+      arriveAt: T0 + min(23),
+      transfers: 1,
+    });
+    const options = foldDrafts([direct, pointless, worthwhile], "destination", settings, T0, T0);
+    expect(options.map((o) => o.vehicleKey)).toEqual(["443:133>18:77", "443:133"]);
+  });
+
+  test("status follows the planned time: missed, tight, recommended, ok", () => {
+    const missed = draft({ vehicleKey: "a", ourStop: trafikplats, boardAt: T0 + min(8) }); // leave T0-1
+    const tight = draft({ vehicleKey: "b", ourStop: trafikplats, boardAt: T0 + min(9.5) }); // leave T0+0.5
+    const best = draft({ vehicleKey: "c", ourStop: jarlaberg, boardAt: T0 + min(3), alightAt: T0 + min(20) });
+    const later = draft({ vehicleKey: "d", ourStop: jarlaberg, boardAt: T0 + min(10), alightAt: T0 + min(40) });
+    const options = foldDrafts([missed, tight, best, later], "origin", settings, T0, T0);
+    expect(options.map((o) => [o.vehicleKey, o.status])).toEqual([
+      ["c", "recommended"],
+      ["b", "tight"],
+      ["d", "ok"],
+      ["a", "missed"],
+    ]);
+  });
+
+  test("the same leave, arrival, stop and changes is one row, whichever line it rides", () => {
+    const via13 = draft({ vehicleKey: "13:1>442:5", ourStop: trafikplats, transfers: 1 });
+    const via19 = draft({ vehicleKey: "19:2>442:5", ourStop: trafikplats, transfers: 1 });
+    const options = foldDrafts([via13, via19], "destination", settings, T0, T0);
+    expect(options).toHaveLength(1);
+  });
+
+  test("the transfer penalty ranks one bus above two at roughly the same time", () => {
+    const oneBus = draft({ vehicleKey: "443:1", ourStop: jarlaberg, boardAt: T0 + min(5), alightAt: T0 + min(35) });
+    const twoBuses = draft({
+      vehicleKey: "25M:1>465:2",
+      ourStop: jarlaberg,
+      boardAt: T0 + min(5),
+      alightAt: T0 + min(32),
+      arriveAt: T0 + min(32),
+      transfers: 1,
+    });
+    const options = foldDrafts([oneBus, twoBuses], "destination", settings, T0, T0);
+    expect(options[0]!.vehicleKey).toBe("443:1");
+  });
+});

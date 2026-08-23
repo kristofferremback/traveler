@@ -143,6 +143,8 @@ export const JourneyLeg = z.object({
   mode: TransportMode,
   line: LineRef.nullable().default(null),
   towards: z.string().nullable().default(null),
+  /** Names the vehicle run, independent of boarding stop. Null for walks and when SL omits it. */
+  tripId: z.string().nullable().default(null),
   origin: z.object({
     name: z.string(),
     platform: z.string().nullable().default(null),

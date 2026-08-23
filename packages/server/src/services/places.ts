@@ -135,7 +135,10 @@ export async function resolvePlace(id: string): Promise<Place | null> {
 
   try {
     const matches = await cached(`resolve:${id}`, 3600, () => stopFinder(id, {}));
-    const match = matches[0];
+    // The stop finder is a search, and it searches whatever it is given: a mistyped id
+    // comes back as the nearest-sounding stop in Norrtälje. Only an exact round-trip of
+    // the id counts as resolving it.
+    const match = matches.find((m) => m.id === id);
     return match ? enrichWithSiteId(match) : null;
   } catch (err) {
     log.warn(`could not resolve place ${id}: ${describe(err)}`);

@@ -273,6 +273,22 @@ function legNotes(leg: EfaLeg): string[] {
   return [...notes];
 }
 
+/**
+ * Identity of the vehicle run a leg rides, independent of where you board or alight.
+ *
+ * EFA carries a per-line `tripCode` on the transportation properties; with the line's
+ * global id and the service day that names one bus. It is what lets two journeys that
+ * board the same 443 at different stops be recognised as the same ride.
+ */
+function tripIdOf(leg: EfaLeg): string | null {
+  const props = leg.transportation?.properties ?? {};
+  const tripCode = props["tripCode"];
+  const lineId = (props["globalId"] as string | undefined) ?? leg.transportation?.id;
+  if (tripCode === undefined || tripCode === null || !lineId) return null;
+  const day = (leg.origin?.departureTimePlanned ?? "").slice(0, 10);
+  return `${lineId}:${String(tripCode)}:${day}`;
+}
+
 function toLeg(leg: EfaLeg, index: number): JourneyLeg {
   const productClass = leg.transportation?.product?.class ?? null;
   const mode = modeFromProductClass(productClass);
@@ -302,6 +318,7 @@ function toLeg(leg: EfaLeg, index: number): JourneyLeg {
           groupOfLines: leg.transportation?.product?.name ?? null,
         },
     towards: isWalk ? null : (leg.transportation?.destination?.name ?? null),
+    tripId: isWalk ? null : tripIdOf(leg),
     origin: {
       name: stopName(origin),
       platform: platformOf(origin, mode),
@@ -361,9 +378,12 @@ function toJourney(journey: EfaJourney, index: number): Journey | null {
   };
 }
 
+/** A stop/address/POI by the id EFA gave it, or a bare coordinate. */
+export type TripEndpoint = { id: string } | { lat: number; lon: number };
+
 export type TripParams = {
-  fromId: string;
-  toId: string;
+  from: TripEndpoint;
+  to: TripEndpoint;
   viaId?: string;
   when?: Date;
   arriveBy?: boolean;
@@ -372,7 +392,26 @@ export type TripParams = {
   prefer?: "time" | "interchanges" | "walking";
   modes?: TransportMode[];
   language?: "sv" | "en";
+  /**
+   * Walking time as a percentage of EFA's own (3.7 km/h) baseline, 25..400. Undocumented
+   * but validated by the gateway, and the only way to make SL's stop selection agree
+   * with a walker who is faster than its default.
+   */
+  walkPercent?: number;
+  /** Longest walk SL may plan to the first or from the last stop, in minutes. */
+  maxWalkMinutes?: number;
+  /** Only trips at or after the requested time. By default SL includes one before it. */
+  oneDirection?: boolean;
 };
+
+function endpoint(kind: "origin" | "destination", e: TripEndpoint): Record<string, string> {
+  if ("id" in e) return { [`type_${kind}`]: "any", [`name_${kind}`]: e.id };
+  // EFA coordinate order is x:y, i.e. lon:lat, in the format its docs spell out.
+  return {
+    [`type_${kind}`]: "coord",
+    [`name_${kind}`]: `${e.lon.toFixed(6)}:${e.lat.toFixed(6)}:WGS84[dd.ddddd]`,
+  };
+}
 
 const ROUTE_TYPE = {
   time: "leasttime",
@@ -390,10 +429,8 @@ export async function trips(params: TripParams): Promise<TripResult> {
   const res = await getJson<TripsResponse>(`${BASE}/trips`, {
     upstream: "sl-journeyplanner/trips",
     query: {
-      type_origin: "any",
-      name_origin: params.fromId,
-      type_destination: "any",
-      name_destination: params.toId,
+      ...endpoint("origin", params.from),
+      ...endpoint("destination", params.to),
       ...(params.viaId ? { type_via: "any", name_via: params.viaId } : {}),
       calc_number_of_trips: params.results ?? 3,
       max_changes: params.maxChanges ?? 9,
@@ -404,6 +441,11 @@ export async function trips(params: TripParams): Promise<TripResult> {
       // Undocumented, but the gateway's own enum validation confirms it exists, and
       // arrive-by is half of what anyone uses a journey planner for.
       ...(params.when ? { itd_trip_date_time_dep_arr: params.arriveBy ? "arr" : "dep" } : {}),
+      ...(params.walkPercent !== undefined
+        ? { change_speed: Math.min(400, Math.max(25, Math.round(params.walkPercent))) }
+        : {}),
+      ...(params.maxWalkMinutes !== undefined ? { tr_it_mot_value100: params.maxWalkMinutes } : {}),
+      ...(params.oneDirection ? { calc_one_direction: true } : {}),
       ...motFlags(params.modes),
     },
     timeoutMs: 15_000,

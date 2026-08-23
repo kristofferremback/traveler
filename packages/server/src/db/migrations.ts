@@ -172,4 +172,22 @@ export const MIGRATIONS: readonly string[] = [
   DROP INDEX IF EXISTS saved_journeys_recent_idx;
   DROP TABLE IF EXISTS saved_journeys;
   `,
+
+  // 6 -- computed walking neighbourhoods.
+  //
+  //      Derived data, not personal data: the street facts (metres, climb, shape) from a
+  //      coordinate to every stop point within walking range, as routed by Valhalla.
+  //      Keyed by the rounded coordinate so two people at the same address share one
+  //      computation, and so a place can be deleted without losing the work. Anything
+  //      that depends on the walker (minutes, which stops are "in range") is derived at
+  //      read time from their settings.
+  `
+  CREATE TABLE neighbourhoods (
+    centre_key   TEXT PRIMARY KEY,
+    lat          REAL NOT NULL,
+    lon          REAL NOT NULL,
+    body         TEXT NOT NULL,
+    computed_at  TEXT NOT NULL
+  );
+  `,
 ];

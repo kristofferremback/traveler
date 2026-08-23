@@ -199,6 +199,58 @@ test.describe("departures", () => {
   });
 });
 
+test.describe("commute engine", () => {
+  // Jarlaberg, Nacka. The walking neighbourhood is computed live against Valhalla on
+  // first use, so the first of these is the slow one.
+  const home = "59.31557,18.16948";
+
+  test("the walking neighbourhood knows the pier is uphill on the way home", async ({ request }) => {
+    test.setTimeout(90_000);
+    const res = await request.get(`/api/neighbourhood?lat=59.31557&lon=18.16948&maxWalkMinutes=20`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    const names = body.stops.map((s: { name: string }) => s.name);
+    expect(names).toContain("Jarlaberg");
+    expect(names).toContain("Nacka trafikplats");
+    const pier = body.stops.find((s: { name: string; mode: string }) => s.name === "Nacka strand" && s.mode === "SHIP");
+    expect(pier).toBeTruthy();
+    // 982 m and a 58 m climb: about 10 min down to the boat, about 15 back up.
+    expect(pier.secondsTo).toBeGreaterThan(8 * 60);
+    expect(pier.secondsFrom - pier.secondsTo).toBeGreaterThan(4 * 60);
+    // Water in the way: Blockhusudden is 1 km as the crow flies and not in the list.
+    expect(names).not.toContain("Blockhusudden");
+  });
+
+  test("home from Slussen ranks real options, one per vehicle, with a recommendation", async ({ request }) => {
+    test.setTimeout(90_000);
+    const res = await request.get(`/api/commute?from=9091001000009192&to=${home}`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.enumerated).toBe("destination");
+    expect(body.options.length).toBeGreaterThan(3);
+    const statuses = body.options.map((o: { status: string }) => o.status);
+    expect(statuses.filter((s: string) => s === "recommended")).toHaveLength(1);
+    // One row per vehicle: no two options ride exactly the same runs.
+    const keys = body.options.map((o: { vehicleKey: string }) => o.vehicleKey);
+    expect(new Set(keys).size).toBe(keys.length);
+    // Every option ends with our own walk from a neighbourhood stop, not SL's estimate.
+    for (const o of body.options) {
+      expect(o.destination.estimated).toBe(false);
+      expect(o.destination.stop).not.toBeNull();
+      expect(new Date(o.arriveAt).getTime()).toBeGreaterThan(new Date(o.leaveAt).getTime());
+    }
+    // Missed options, if any, sort after live ones.
+    const firstMissed = statuses.indexOf("missed");
+    if (firstMissed !== -1) expect(statuses.slice(firstMissed).every((s: string) => s === "missed")).toBe(true);
+  });
+
+  test("a mistyped place id is a 404, not a fuzzy match in Norrtälje", async ({ request }) => {
+    const res = await request.get(`/api/commute?from=nonsense&to=${home}`);
+    expect(res.status()).toBe(404);
+    expect((await res.json()).error.code).toBe("unknown_place");
+  });
+});
+
 test.describe("other surfaces", () => {
   test("disruptions default to real disruptions, not every notice", async ({ page }) => {
     await page.goto("/disruptions");

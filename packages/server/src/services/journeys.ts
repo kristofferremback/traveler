@@ -8,7 +8,7 @@ import { AppError } from "../lib/errors.ts";
  * can open its own departures board. The journey planner reports platform coordinates;
  * the catalog turns those back into stops.
  */
-function attachSiteIds(journey: Journey): Journey {
+export function attachSiteIds(journey: Journey): Journey {
   return {
     ...journey,
     legs: journey.legs.map((leg) => ({
@@ -37,8 +37,8 @@ export async function planJourney(query: JourneyQuery): Promise<JourneyResponse>
   }
 
   const result = await trips({
-    fromId: query.from,
-    toId: query.to,
+    from: { id: query.from },
+    to: { id: query.to },
     viaId: query.via,
     when,
     arriveBy: query.arriveBy,

@@ -199,3 +199,75 @@ export function catalogCounts() {
     lines: lineCount.get()?.n ?? 0,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Stop points
+// ---------------------------------------------------------------------------
+
+export type StopPointRow = {
+  id: number;
+  name: string;
+  lat: number;
+  lon: number;
+  stop_area_id: number | null;
+  stop_area_type: string | null;
+  site_id: number;
+  site_gid: string;
+  site_name: string;
+};
+
+const stopPointsInBox = db.query<
+  {
+    id: number;
+    name: string;
+    lat: number;
+    lon: number;
+    stop_area_id: number | null;
+    stop_area_type: string | null;
+  },
+  [number, number, number, number]
+>(
+  `SELECT id, name, lat, lon, stop_area_id, stop_area_type FROM stop_points
+    WHERE removed_at IS NULL AND lat IS NOT NULL AND lon IS NOT NULL
+      AND lat BETWEEN ?1 AND ?2 AND lon BETWEEN ?3 AND ?4`,
+);
+
+const siteByStopArea = db.query<{ stop_area_id: number; id: number; gid: string; name: string }, []>(
+  `SELECT j.value AS stop_area_id, s.id, s.gid, s.name
+     FROM sites s, json_each(s.stop_areas) j
+    WHERE s.removed_at IS NULL`,
+);
+
+/**
+ * Stop points near a coordinate, each joined to the site it belongs to.
+ *
+ * SL publishes the join the other way round -- a site lists its stop areas -- so the
+ * area→site map is built in one pass here rather than with a per-row json_each, which
+ * would make the query quadratic.
+ */
+export function stopPointsNear(lat: number, lon: number, radiusMetres: number): (StopPointRow & { distanceMetres: number })[] {
+  const box = degreeBox(lat, lon, radiusMetres);
+  const areaToSite = new Map<number, { id: number; gid: string; name: string }>();
+  for (const row of siteByStopArea.all()) {
+    areaToSite.set(row.stop_area_id, { id: row.id, gid: row.gid, name: row.name });
+  }
+
+  const out: (StopPointRow & { distanceMetres: number })[] = [];
+  for (const p of stopPointsInBox.all(box.minLat, box.maxLat, box.minLon, box.maxLon)) {
+    const distance = haversineMetres(lat, lon, p.lat, p.lon);
+    if (distance > radiusMetres) continue;
+    const site = p.stop_area_id === null ? undefined : areaToSite.get(p.stop_area_id);
+    // A stop point with no site cannot be asked for trips or departures; skip it
+    // rather than produce a stop you can walk to but never leave from.
+    if (!site) continue;
+    out.push({
+      ...p,
+      site_id: site.id,
+      site_gid: site.gid,
+      site_name: site.name,
+      distanceMetres: Math.round(distance),
+    });
+  }
+  out.sort((a, b) => a.distanceMetres - b.distanceMetres);
+  return out;
+}
