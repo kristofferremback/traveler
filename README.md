@@ -22,7 +22,38 @@ bun run build
 bun run start     # http://localhost:3000
 ```
 
-Nothing here needs an API key. Live vehicle positions do; see below.
+Live vehicle positions need a Trafiklab key; see below. Everything else works
+without one.
+
+## Sign-in
+
+Traveler is invite-only. Every route under `/api` needs a session or an API key, and
+the app redirects to `/signin` without one. A fresh instance has nobody inside, so the
+first invite is minted on the server:
+
+```bash
+bun run invite you@example.com "Your name"
+```
+
+It prints one line, the link. Opening it signs you in, creates the account, and offers
+to add a passkey; from then on "Logga in med passkey" is the whole sign-in. The link
+works once and for seven days, and nothing is emailed anywhere -- passing it on is your
+job. Later invites are easier to make from **Mer -> Bjud in**, which shows the link and
+a QR code for the phone across the table.
+
+Passkeys need a secure context. `http://localhost` counts, so development is fine, but
+a plain `http://192.168.x.x` does not: use `./run-tailscale.sh` to reach it from a
+phone. A passkey is bound to the hostname in `AUTH_BASE_URL`, so changing that origin
+makes existing passkeys unusable and everyone needs a new invite.
+
+For agents and scripts, **Mer -> API-nycklar** creates a key, shown once:
+
+```bash
+curl -H "x-api-key: $KEY" "http://localhost:3000/api/commute?from=...&to=..."
+```
+
+A key is a session, so it reaches every route the browser does. Set `AUTH_SECRET` and
+`AUTH_BASE_URL` before deploying; see `.env.example`.
 
 ## The SL APIs
 
@@ -140,12 +171,13 @@ attribution.
 
 ## Deploying
 
-Every route is a read except one. `POST /api/catalog/sync` exists only when
-`ADMIN_TOKEN` is set and is guarded by it; unset, the route is not registered. There is
-no authentication otherwise, and nothing writes user data, which is deliberate: a
-deployed instance holds only a cache of SL's public data. Favourites and trip history
-would change that, so they need an owner for each row decided before the schema, not
-after.
+Everything under `/api` needs a session or an API key, apart from the two probes and
+the auth endpoints themselves. `POST /api/catalog/sync` additionally exists only when
+`ADMIN_TOKEN` is set and is guarded by it; unset, the route is not registered.
+
+`AUTH_SECRET` is required in production and the server refuses to start without it.
+`AUTH_BASE_URL` must be the origin people actually reach, because it is the passkey
+relying party and the base of invite links.
 
 There are two probes, and the difference matters.
 

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { followInvite, mintInvite, signInContext, uniqueEmail } from "./auth";
 
 /**
  * These drive the real app in a real browser against live SL data, because the failures
@@ -33,6 +34,19 @@ async function pickStop(page: Page, field: ReturnType<typeof fromField>, query: 
   await field.press("Enter");
   await expect(field).toHaveValue(expected);
 }
+
+/**
+ * Every test below runs as an invited, signed-in person, because that is the only way
+ * the app can be used: /api answers 401 without a session and the app redirects to
+ * /signin. The invite comes from the real CLI, so the sign-in path is exercised by
+ * every run rather than only by the tests that name it.
+ *
+ * The cookie is fetched with the API context and copied into the browser context, so a
+ * test that never opens a page does not pay for one.
+ */
+test.beforeEach(async ({ context, request }) => {
+  await signInContext(context, request);
+});
 
 test.describe("preconditions", () => {
   test("the catalog is loaded before anything else runs", async ({ request }) => {
@@ -323,5 +337,215 @@ test.describe("other surfaces", () => {
     await page.goto("/?from=9091001000009189&to=9091001000009001");
     await expect(page.getByRole("button", { name: "Försök igen" })).toBeVisible();
     expect((await page.locator("body").innerText()).trim().length).toBeGreaterThan(20);
+  });
+});
+
+test.describe("sign-in and the gate", () => {
+  test("answers 401 JSON when the API is called without a session", async ({
+    playwright,
+    baseURL,
+  }) => {
+    // A context of its own: the suite's own `request` is signed in by the beforeEach,
+    // which is exactly the state this test must not be in.
+    const anon = await playwright.request.newContext({ baseURL });
+
+    for (const path of [
+      "/api/places/search?q=slussen",
+      "/api/commute?from=9091001000009192&to=59.31557,18.16948",
+      "/api/sites/9192/departures",
+      "/api/me",
+    ]) {
+      const res = await anon.get(path);
+      expect(res.status(), path).toBe(401);
+      expect(res.headers()["content-type"]).toContain("application/json");
+      expect((await res.json()).error.code).toBe("unauthenticated");
+    }
+
+    // The probes stay open: a platform health check runs before anyone signs in.
+    expect((await anon.get("/api/health")).status()).toBe(200);
+    expect((await anon.get("/api/ready")).status()).toBe(200);
+
+    await anon.dispose();
+  });
+
+  test("sends a signed-out browser to the sign-in page", async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/signin$/);
+    await expect(page.getByRole("button", { name: "Logga in med passkey" })).toBeVisible();
+    // No email field, no password: an invite is the only way to a new account.
+    await expect(page.getByText("Ny här? Öppna din inbjudningslänk.")).toBeVisible();
+    await context.close();
+  });
+
+  test("signs in through a CLI invite link and reaches the app", async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    await followInvite(page, mintInvite(uniqueEmail()));
+    await expect(page.getByRole("heading", { name: "Välkommen" })).toBeVisible();
+
+    // "Hoppa över" is a real way out; adding a passkey must not be a wall.
+    await page.getByRole("link", { name: "Hoppa över" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("combobox", { name: "Från" })).toBeVisible();
+
+    await context.close();
+  });
+
+  test("refuses a reused invite link", async ({ browser }) => {
+    const url = mintInvite(uniqueEmail());
+
+    const first = await browser.newContext();
+    await followInvite(await first.newPage(), url);
+    await first.close();
+
+    // Someone forwarded the link, or it is sitting in a chat log.
+    const second = await browser.newContext();
+    const page = await second.newPage();
+    await page.goto(url);
+    await expect(page.getByText("Länken har redan använts eller gått ut. Be om en ny.")).toBeVisible();
+    // Shown the message and not signed in, which is the part that matters.
+    expect((await page.request.get("/api/me")).status()).toBe(401);
+    await second.close();
+  });
+
+  test("does not serve the public magic-link or email sign-up endpoints", async ({
+    playwright,
+    baseURL,
+  }) => {
+    // The magic-link plugin's own endpoint mints a link for any address that asks,
+    // which would make an invite-only instance self-serve. It is not routed.
+    const anon = await playwright.request.newContext({ baseURL });
+
+    const magic = await anon.post("/api/auth/sign-in/magic-link", {
+      data: { email: "stranger@example.com" },
+    });
+    expect(magic.status()).toBe(404);
+
+    const signUp = await anon.post("/api/auth/sign-up/email", {
+      data: { email: "stranger@example.com", password: "password1234", name: "Stranger" },
+    });
+    expect(signUp.status()).toBe(400);
+
+    await anon.dispose();
+  });
+
+  test("accepts an API key on the API and refuses a wrong one", async ({
+    request,
+    playwright,
+    baseURL,
+  }) => {
+    // The signed-in context mints the key, the way the settings page does.
+    const created = await request.post("/api/auth/api-key/create", {
+      data: { name: "e2e" },
+      headers: { origin: baseURL! },
+    });
+    expect(created.status()).toBe(200);
+    const key = (await created.json()).key as string;
+    expect(key.length).toBeGreaterThan(20);
+
+    const agent = await playwright.request.newContext({
+      baseURL,
+      extraHTTPHeaders: { "x-api-key": key },
+    });
+    expect((await agent.get("/api/places/search?q=slussen")).status()).toBe(200);
+    await agent.dispose();
+
+    // getSession throws rather than returning null for a key it does not know; that has
+    // to surface as 401 rather than a 500.
+    const wrong = await playwright.request.newContext({
+      baseURL,
+      extraHTTPHeaders: { "x-api-key": "not-a-real-key" },
+    });
+    const refused = await wrong.get("/api/places/search?q=slussen");
+    expect(refused.status()).toBe(401);
+    expect((await refused.json()).error.code).toBe("unauthenticated");
+    await wrong.dispose();
+  });
+
+  test("the settings page hands over a working invite link and a QR code", async ({
+    page,
+    browser,
+  }) => {
+    await page.goto("/settings");
+    const email = uniqueEmail();
+    await page.getByLabel("E-postadress").fill(email);
+    await page.getByRole("button", { name: "Skapa inbjudan" }).click();
+
+    const link = page.getByLabel("Inbjudningslänk");
+    await expect(link).toBeVisible();
+    await expect(page.getByRole("img", { name: /QR-kod/ })).toBeVisible();
+
+    const url = await link.inputValue();
+    expect(url).toContain("/api/auth/magic-link/verify?token=");
+
+    // The link is the product of this screen, so it has to work somewhere else.
+    const invited = await browser.newContext();
+    await followInvite(await invited.newPage(), url);
+    await invited.close();
+  });
+
+  test("creates an API key from the settings page and shows it once", async ({ page }) => {
+    await page.goto("/settings");
+    await page.getByLabel("Namn på nyckeln").fill("Agent");
+    await page.getByRole("button", { name: "Skapa nyckel" }).click();
+
+    await expect(page.getByText("Kopiera nyckeln nu. Den visas inte igen.")).toBeVisible();
+    const value = await page.getByLabel("API-nyckel").inputValue();
+    expect(value.length).toBeGreaterThan(20);
+
+    // The list shows the key without its secret: only the first characters are stored.
+    await expect(page.getByText("Agent", { exact: false }).first()).toBeVisible();
+    await page.reload();
+    await expect(page.getByText(value)).toHaveCount(0);
+  });
+
+  test("adds a passkey and signs in with it", async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    // Chrome's virtual authenticator: a platform authenticator (transport "internal",
+    // like a phone's fingerprint sensor) that reports the user as verified, so the
+    // WebAuthn calls resolve without a human touching anything.
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("WebAuthn.enable");
+    const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+      options: {
+        protocol: "ctap2",
+        transport: "internal",
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+        automaticPresenceSimulation: true,
+      },
+    });
+    expect(authenticatorId).toBeTruthy();
+
+    await followInvite(page, mintInvite(uniqueEmail()));
+    await page.getByRole("button", { name: "Lägg till passkey" }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    await page.goto("/settings");
+    await expect(page.getByText(/tillagd /)).toBeVisible();
+
+    await page.getByRole("button", { name: "Logga ut" }).click();
+    await expect(page).toHaveURL(/\/signin$/);
+
+    // The point of the whole exercise: a second sign-in with no link and no password.
+    await page.getByRole("button", { name: "Logga in med passkey" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("combobox", { name: "Från" })).toBeVisible();
+
+    await context.close();
+  });
+
+  test("signs out and the app is closed again", async ({ page }) => {
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Logga ut" }).click();
+    await expect(page).toHaveURL(/\/signin$/);
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/signin$/);
   });
 });

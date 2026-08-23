@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { E2E_AUTH_SECRET } from "./e2e/auth";
 
 /**
  * End-to-end against a running Traveler and the live SL APIs.
@@ -46,6 +47,11 @@ export default defineConfig({
       DATABASE_PATH: "./.e2e/traveler.db",
       CATALOG_SYNC_ON_BOOT: "true",
       LOG_LEVEL: "warn",
+      // The suite signs itself in, so it needs the same auth configuration the invite
+      // CLI uses. AUTH_BASE_URL has to name the port the browser reaches, because it is
+      // the passkey relying party and the base of every invite link the CLI prints.
+      AUTH_SECRET: E2E_AUTH_SECRET,
+      AUTH_BASE_URL: "http://localhost:3111",
     },
     /**
      * Readiness, not liveness.

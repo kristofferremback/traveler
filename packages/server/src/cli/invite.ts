@@ -5,9 +5,15 @@
  * has no one to invite it. Only the URL goes to stdout, so `bun run invite you@example
  * .com | pbcopy` does the obvious thing; everything else is on stderr.
  */
-import { env, usingDevAuthSecret } from "../env.ts";
-import { createInvite } from "../auth/invites.ts";
-import { closeDb } from "../db/index.ts";
+
+// Boot and migration logging goes to stdout, and stdout here is the link. The logger
+// reads its level when it is first imported, so this has to happen before the modules
+// that use it are loaded -- hence the dynamic imports.
+process.env.LOG_LEVEL ??= "warn";
+
+const { env, usingDevAuthSecret } = await import("../env.ts");
+const { createInvite } = await import("../auth/invites.ts");
+const { closeDb } = await import("../db/index.ts");
 
 const [email, ...nameParts] = process.argv.slice(2);
 const name = nameParts.join(" ").trim();
