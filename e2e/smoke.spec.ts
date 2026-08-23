@@ -1,5 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
-import { followInvite, mintInvite, signInContext, uniqueEmail } from "./auth";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { followInvite, mintInvite, signInContext, signInRequest, uniqueEmail } from "./auth";
 
 /**
  * These drive the real app in a real browser against live SL data, because the failures
@@ -262,6 +262,126 @@ test.describe("commute engine", () => {
     const res = await request.get(`/api/commute?from=nonsense&to=${home}`);
     expect(res.status()).toBe(404);
     expect((await res.json()).error.code).toBe("unknown_place");
+  });
+});
+
+test.describe("saved places", () => {
+  /** Jarlaberg, Nacka: the stop this whole engine was built around. */
+  const JARLABERG = "9091001000004030";
+  const SLUSSEN = "9091001000009192";
+
+  async function saveHome(request: APIRequestContext): Promise<number> {
+    const created = await request.post("/api/places", {
+      data: { label: "Hem", placeId: JARLABERG },
+    });
+    expect(created.status()).toBe(201);
+    const { place } = await created.json();
+    return place.id as number;
+  }
+
+  test("keeps places per user", async ({ request, playwright, baseURL }) => {
+    const created = await request.post("/api/places", {
+      data: { label: "Hem", placeId: JARLABERG },
+    });
+    expect(created.status()).toBe(201);
+    const { place } = await created.json();
+    expect(place).toMatchObject({ label: "Hem", kind: "stop", name: "Jarlaberg", ref: JARLABERG });
+
+    // A second invited person. Ownership is a WHERE clause, so their list is empty and
+    // the other person's place is a 404 rather than a 403 -- which would confirm it
+    // exists.
+    const other = await playwright.request.newContext({ baseURL });
+    await signInRequest(other);
+
+    const list = await other.get("/api/places");
+    expect(list.status()).toBe(200);
+    expect((await list.json()).places).toEqual([]);
+
+    const foreign = await other.get(`/api/places/${place.id}`);
+    expect(foreign.status()).toBe(404);
+    await other.dispose();
+  });
+
+  test("computes a neighbourhood for a saved place and draws it", async ({ page, request }) => {
+    // The first read routes every walk from the place against Valhalla, one request a
+    // second.
+    test.setTimeout(180_000);
+
+    await page.goto("/places/new");
+    await page.getByLabel("Namn").fill("Hem");
+    await pickStop(page, page.getByRole("combobox", { name: "Plats" }), "jarlaberg", /Jarlaberg/);
+    await page.getByRole("button", { name: "Spara" }).click();
+
+    await expect(page).toHaveURL(/\/places\/\d+$/);
+    await expect(page.getByRole("heading", { name: "Hem", level: 1 })).toBeVisible();
+
+    // The pier is the proof the walk is routed rather than guessed: it is a different
+    // site, downhill, and a stop only a walking neighbourhood would offer.
+    await expect(page.getByText("Nacka strand").first()).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByText(/\d+ min dit · \d+ min hem/).first()).toBeVisible();
+    await expect(page.getByRole("application", { name: /Karta/ })).toBeVisible();
+
+    const id = Number(page.url().split("/").pop());
+    const hood = await request.get(`/api/places/${id}/neighbourhood`);
+    expect(hood.status()).toBe(200);
+    expect((await hood.json()).stops.length).toBeGreaterThanOrEqual(10);
+  });
+
+  test("plans a commute by saved label", async ({ request }) => {
+    test.setTimeout(180_000);
+    const id = await saveHome(request);
+
+    const res = await request.get(`/api/commute?from=${SLUSSEN}&to=place:${id}`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    // The label rides along beside the resolved place, so the UI can say "Hem" without
+    // losing which stop that is.
+    expect(body.toLabel).toBe("Hem");
+    expect(body.fromLabel).toBeNull();
+    expect(body.to.name).toBe("Jarlaberg");
+    expect(body.options.length).toBeGreaterThan(0);
+  });
+
+  test("applies the stored walking settings", async ({ request }) => {
+    test.setTimeout(180_000);
+    const id = await saveHome(request);
+
+    const saved = await request.put("/api/settings", { data: { maxWalkMinutes: 5 } });
+    expect(saved.status()).toBe(200);
+    expect((await saved.json()).settings).toMatchObject({ maxWalkMinutes: 5, speedKmh: 6 });
+
+    // Five minutes from the Jarlaberg stop reaches Jarlaberg and not much else.
+    const hood = await request.get(`/api/places/${id}/neighbourhood`);
+    expect(hood.status()).toBe(200);
+    const stops = (await hood.json()).stops as { name: string }[];
+    expect(stops.map((s) => s.name)).toContain("Jarlaberg");
+    expect(stops.length).toBeLessThanOrEqual(2);
+
+    // A shorter walk is still a walk: the trip planner keeps working on the one stop.
+    const commute = await request.get(`/api/commute?from=${SLUSSEN}&to=place:${id}`);
+    expect(commute.status()).toBe(200);
+    expect((await commute.json()).options.length).toBeGreaterThan(0);
+
+    const restored = await request.put("/api/settings", { data: { maxWalkMinutes: 20 } });
+    expect((await restored.json()).settings.maxWalkMinutes).toBe(20);
+  });
+
+  test("renames and deletes a saved place", async ({ page, request }) => {
+    const id = await saveHome(request);
+    await page.goto(`/places/${id}`);
+
+    await page.getByRole("button", { name: "Byt namn" }).click();
+    await page.getByLabel("Namn").fill("Hemma");
+    await page.getByLabel("Namn").press("Enter");
+    await expect(page.getByRole("heading", { name: "Hemma", level: 1 })).toBeVisible();
+
+    // Deleting asks in place rather than through window.confirm, which cannot be styled
+    // and reads badly on a phone.
+    await page.getByRole("button", { name: "Ta bort", exact: true }).click();
+    await page.getByRole("button", { name: "Ta bort Hemma" }).click();
+    await expect(page).toHaveURL(/\/places$/);
+
+    expect((await request.get(`/api/places/${id}`)).status()).toBe(404);
   });
 });
 

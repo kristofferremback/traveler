@@ -55,6 +55,22 @@ curl -H "x-api-key: $KEY" "http://localhost:3000/api/commute?from=...&to=..."
 A key is a session, so it reaches every route the browser does. Set `AUTH_SECRET` and
 `AUTH_BASE_URL` before deploying; see `.env.example`.
 
+## Saved places
+
+A place is anything you would name: a stop, an address, a point of interest, or a bare
+coordinate. You give it a label -- "Hem", "Jobbet" -- and the underlying place keeps its
+own name, so renaming never loses which stop it actually is. Saving one starts computing
+its walking neighbourhood in the background, so by the time the place page opens the map
+can draw what you can reach on foot: the isochrone rings, the routed walk to each stop,
+and how many minutes it is there and back. The two differ, because the hill does.
+
+**Mer -> Promenad** keeps the five walking settings on the account instead of in every
+query string: speed, longest walk, what a change costs in the ranking, how walking time is
+weighted, and the margin before a departure counts as missed. `/api/commute` uses them
+by default, accepts `place:<id>` for a saved place at either end, and still takes any of
+the five as a query parameter to override just that request. Places belong to their
+owner: every statement filters on the account, so someone else's id is a 404.
+
 ## The SL APIs
 
 Three separate APIs with three different vocabularies, all open.
