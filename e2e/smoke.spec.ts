@@ -357,6 +357,13 @@ test.describe("saved places", () => {
     expect(stops.map((s) => s.name)).toContain("Jarlaberg");
     expect(stops.length).toBeLessThanOrEqual(2);
 
+    // The bare-coordinate read follows the same settings; the two must not disagree about
+    // the same spot. A query override still wins for that one request.
+    const byCoord = await request.get(`/api/neighbourhood?lat=59.31557&lon=18.16948`);
+    expect(((await byCoord.json()).stops as unknown[]).length).toBeLessThanOrEqual(2);
+    const widened = await request.get(`/api/neighbourhood?lat=59.31557&lon=18.16948&maxWalkMinutes=20`);
+    expect(((await widened.json()).stops as unknown[]).length).toBeGreaterThan(10);
+
     // A shorter walk is still a walk: the trip planner keeps working on the one stop.
     const commute = await request.get(`/api/commute?from=${SLUSSEN}&to=place:${id}`);
     expect(commute.status()).toBe(200);

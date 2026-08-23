@@ -103,7 +103,11 @@ export const Neighbourhood = z.object({
 });
 export type Neighbourhood = z.infer<typeof Neighbourhood>;
 
-export const NeighbourhoodQuery = WalkSettings.extend({
+/**
+ * Reading the neighbourhood of a bare coordinate. The account's stored settings decide
+ * it, like every other read; the query may override the two that change what comes back.
+ */
+export const NeighbourhoodQuery = WalkSettingsOverrides.extend({
   lat: numeric.min(-90).max(90),
   lon: numeric.min(-180).max(180),
   isochrones: z

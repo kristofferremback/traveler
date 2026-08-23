@@ -144,7 +144,9 @@ export async function createPlace(
  * from cold.
  */
 function warmNeighbourhood(lat: number, lon: number, settings: CommuteSettings): void {
-  void getNeighbourhood(lat, lon, settings).catch((err: unknown) => {
+  // Rings included: the place page asks for them on its first load, and a warm-up that
+  // left them out would still make that first load wait on Valhalla.
+  void getNeighbourhood(lat, lon, settings, { isochrones: true }).catch((err: unknown) => {
     // A failed warm-up is not a failed save: the place is stored, and the next read
     // tries again. It is logged because a run of these means routing is down.
     log.warn(`could not warm neighbourhood for ${lat},${lon}: ${describe(err)}`);
