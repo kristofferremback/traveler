@@ -10,57 +10,85 @@ export const map = new Hono();
 /**
  * Basemaps.
  *
- * The production answer is a Protomaps `.pmtiles` extract on the Railway volume: one
- * file, no key, no tile server, no per-request cost, and the browser reads it directly
- * with HTTP range requests. Build one covering Stockholm with:
+ * Two answers, in this order.
+ *
+ * A Protomaps `.pmtiles` extract on the volume is the self-hosted one: one file, no key,
+ * no tile server, no per-request cost, and the browser reads it directly with HTTP range
+ * requests. Build one covering Stockholm with:
  *
  *   pmtiles extract https://build.protomaps.com/<date>.pmtiles stockholm.pmtiles \
  *     --bbox=17.4,58.9,19.2,60.1
  *
  * then point PMTILES_PATH at it.
  *
- * Without that file we fall back to OpenStreetMap's own raster tiles. That is fine for
- * development and explicitly not fine for anything sustained -- the OSMF tile policy
- * asks apps not to use it. The fallback announces itself in the log and in the style's
- * attribution rather than quietly becoming the permanent setup.
+ * Without that file, OpenFreeMap: keyless, no quota, no account, and their styles carry
+ * the OpenStreetMap attribution they owe. That is the default because the map is now the
+ * home screen, and a home screen cannot rest on OSM's raster tiles -- the OSMF tile
+ * policy asks apps not to, and a "development fallback" on the first screen of the app
+ * is not development.
  */
 function pmtilesAvailable(): string | null {
   const path = env.PMTILES_PATH;
   if (!path) return null;
   if (!existsSync(path)) {
-    log.warn(`PMTILES_PATH is set to ${path} but no file is there; using raster fallback`);
+    log.warn(`PMTILES_PATH is set to ${path} but no file is there; using OpenFreeMap`);
     return null;
   }
   return path;
 }
 
-const OSM_ATTRIBUTION =
-  '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a>';
+type Theme = "dark" | "light";
 
-map.get("/style.json", (c) => {
-  const path = pmtilesAvailable();
-  const origin = new URL(c.req.url).origin;
+const OPENFREEMAP_STYLE: Record<Theme, string> = {
+  dark: "https://tiles.openfreemap.org/styles/dark",
+  light: "https://tiles.openfreemap.org/styles/positron",
+};
 
-  if (!path) {
-    return c.json({
-      version: 8,
-      name: "Traveler (development raster)",
-      sources: {
-        osm: {
-          type: "raster",
-          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-          tileSize: 256,
-          maxzoom: 19,
-          attribution: `${OSM_ATTRIBUTION} — development basemap, set PMTILES_PATH for production`,
-        },
-      },
-      layers: [{ id: "osm", type: "raster", source: "osm" }],
-    });
-  }
+/** Their styles change about never, and a style fetch is on the critical path of a map. */
+const STYLE_TTL_MS = 6 * 60 * 60 * 1000;
+const styleCache = new Map<Theme, { style: unknown; expiresAt: number }>();
 
-  return c.json({
+async function openFreeMapStyle(theme: Theme): Promise<unknown> {
+  const hit = styleCache.get(theme);
+  if (hit && hit.expiresAt > Date.now()) return hit.style;
+
+  const res = await fetch(OPENFREEMAP_STYLE[theme], { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`OpenFreeMap answered ${res.status}`);
+  const style = await res.json();
+  styleCache.set(theme, { style, expiresAt: Date.now() + STYLE_TTL_MS });
+  return style;
+}
+
+const OSM_ATTRIBUTION = '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a>';
+
+/**
+ * The pmtiles style, in two flavours.
+ *
+ * Deliberately minimal: a transit map wants a quiet ground so routes and vehicles are
+ * the only things competing for attention. The dark flavour is not the light one dimmed
+ * -- water has to stay darker than land in both, or the archipelago reads inside out.
+ */
+function pmtilesStyle(origin: string, theme: Theme) {
+  const palette =
+    theme === "light"
+      ? {
+          background: "#f6f5f3",
+          water: "#c3d9e8",
+          landuse: "#e8ebe4",
+          roads: "#e2ddd6",
+          buildings: "#e6e2dc",
+        }
+      : {
+          background: "#0e1420",
+          water: "#0a1626",
+          landuse: "#131b28",
+          roads: "#1f2937",
+          buildings: "#182234",
+        };
+
+  return {
     version: 8,
-    name: "Traveler",
+    name: `Traveler (${theme})`,
     glyphs: "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
     sources: {
       protomaps: {
@@ -69,40 +97,67 @@ map.get("/style.json", (c) => {
         attribution: OSM_ATTRIBUTION,
       },
     },
-    // Deliberately minimal: a transit map wants a quiet ground so routes and vehicles
-    // are the only things competing for attention.
     layers: [
-      { id: "background", type: "background", paint: { "background-color": "#f6f5f3" } },
+      { id: "background", type: "background", paint: { "background-color": palette.background } },
       {
         id: "water",
         type: "fill",
         source: "protomaps",
         "source-layer": "water",
-        paint: { "fill-color": "#c3d9e8" },
+        paint: { "fill-color": palette.water },
       },
       {
         id: "landuse",
         type: "fill",
         source: "protomaps",
         "source-layer": "landuse",
-        paint: { "fill-color": "#e8ebe4" },
+        paint: { "fill-color": palette.landuse },
       },
       {
         id: "roads",
         type: "line",
         source: "protomaps",
         "source-layer": "roads",
-        paint: { "line-color": "#e2ddd6", "line-width": 1 },
+        paint: { "line-color": palette.roads, "line-width": 1 },
       },
       {
         id: "buildings",
         type: "fill",
         source: "protomaps",
         "source-layer": "buildings",
-        paint: { "fill-color": "#e6e2dc" },
+        paint: { "fill-color": palette.buildings },
       },
     ],
-  });
+  };
+}
+
+map.get("/style.json", async (c) => {
+  const theme: Theme = c.req.query("theme") === "light" ? "light" : "dark";
+  const path = pmtilesAvailable();
+
+  if (path) {
+    c.header("cache-control", "public, max-age=3600");
+    return c.json(pmtilesStyle(new URL(c.req.url).origin, theme));
+  }
+
+  try {
+    const style = await openFreeMapStyle(theme);
+    c.header("cache-control", "public, max-age=3600");
+    return c.json(style);
+  } catch (err) {
+    // No silent second choice: a map drawn on a basemap nobody chose is worse than a
+    // map that says its ground is missing, which is what the client renders on this.
+    log.warn(`OpenFreeMap ${theme} style unavailable: ${err instanceof Error ? err.message : err}`);
+    return c.json(
+      {
+        error: {
+          code: "basemap_unavailable",
+          message: "The basemap style could not be fetched. Set PMTILES_PATH to self-host one.",
+        },
+      },
+      502,
+    );
+  }
 });
 
 /**

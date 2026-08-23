@@ -360,6 +360,28 @@ export function foldDrafts(
   return [...live, ...missed];
 }
 
+/**
+ * Drop the geometry the caller did not ask for.
+ *
+ * A shape rather than a mutation: the journeys come out of the response cache, and an
+ * option that arrived with its path emptied in place would be served that way to the
+ * next caller who asked for all of them.
+ */
+function withPaths(options: CommuteOption[], mode: CommuteQuery["paths"]): CommuteOption[] {
+  if (mode === "all") return options;
+  return options.map((option) => {
+    if (mode === "recommended" && option.status === "recommended") return option;
+    if (!option.journey.legs.some((leg) => leg.path.length > 0)) return option;
+    return {
+      ...option,
+      journey: {
+        ...option.journey,
+        legs: option.journey.legs.map((leg) => (leg.path.length > 0 ? { ...leg, path: [] } : leg)),
+      },
+    };
+  });
+}
+
 export async function planCommute(query: CommuteQuery, userId: string): Promise<CommuteResponse> {
   // The account is the default; the query overrides only what it actually names.
   const settings: CommuteSettings = mergeSettings(getSettings(userId), query);
@@ -451,7 +473,7 @@ export async function planCommute(query: CommuteQuery, userId: string): Promise<
     fromLabel: from.label,
     toLabel: to.label,
     enumerated: side,
-    options: foldDrafts(drafts, side, settings, plannedFrom, now),
+    options: withPaths(foldDrafts(drafts, side, settings, plannedFrom, now), query.paths),
     settings,
     plannedFrom: new Date(plannedFrom).toISOString(),
     fetchedAt: new Date().toISOString(),

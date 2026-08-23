@@ -136,6 +136,15 @@ export const CommuteQuery = CommuteSettingsOverrides.extend({
   to: PlaceRef,
   /** ISO instant to plan from. Absent means now. */
   when: z.string().optional(),
+  /**
+   * How much drawn geometry to send back.
+   *
+   * The leg paths are most of the bytes in a response and only one option is on the map
+   * at a time, so the default carries the recommended option's and empties the rest.
+   * `all` is what a client asks for when the traveller picks another row; `none` is for
+   * a caller with no map at all.
+   */
+  paths: z.enum(["recommended", "all", "none"]).default("recommended"),
 });
 export type CommuteQuery = z.infer<typeof CommuteQuery>;
 
