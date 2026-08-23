@@ -3,6 +3,8 @@ import {
   DeparturesQuery,
   DeviationsQuery,
   JourneyQuery,
+  type PlaceResponse,
+  type StreamError,
   VehiclesQuery,
 } from "@traveler/shared";
 import { getDepartures, subscribeToDepartures } from "../services/departures.ts";
@@ -15,6 +17,11 @@ import { getSite, rowToPlace } from "../db/catalog.ts";
 import { AppError } from "../lib/errors.ts";
 
 export const transit = new Hono();
+
+/** The `stream-error` payload: an upstream failure reported on an otherwise open stream. */
+function upstream(message: string): StreamError {
+  return { code: "upstream_error", message };
+}
 
 // --- Stops -------------------------------------------------------------------
 
@@ -30,7 +37,8 @@ transit.get("/sites/:siteId", (c) => {
   const siteId = parseIntParam(c.req.param("siteId"), "siteId");
   const site = getSite(siteId);
   if (!site) throw new AppError("not_found", `No stop with id ${siteId}`, 404);
-  return c.json({ place: rowToPlace(site) });
+  const body: PlaceResponse = { place: rowToPlace(site) };
+  return c.json(body);
 });
 
 // --- Departures -------------------------------------------------------------
@@ -48,7 +56,7 @@ transit.get("/sites/:siteId/departures/stream", (c) => {
   return sseStream(c, `departures:${siteId}`, (push) =>
     subscribeToDepartures(siteId, query, (value, error) => {
       if (value) push("departures", value);
-      if (error) push(ERROR_EVENT, { code: "upstream_error", message: error });
+      if (error) push(ERROR_EVENT, upstream(error));
     }),
   );
 });
@@ -72,7 +80,7 @@ transit.get("/deviations/stream", (c) => {
   return sseStream(c, "deviations", (push) =>
     subscribeToDeviations(query, (value, error) => {
       if (value) push("deviations", value);
-      if (error) push(ERROR_EVENT, { code: "upstream_error", message: error });
+      if (error) push(ERROR_EVENT, upstream(error));
     }),
   );
 });

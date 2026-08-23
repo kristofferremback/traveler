@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { CatalogStatus, HealthResponse, ReadyResponse } from "@traveler/shared";
 import { env, VERSION } from "../env.ts";
 import { catalogCounts, searchIndexSize } from "../db/catalog.ts";
 import { lastSync } from "../sync/catalog.ts";
@@ -10,7 +11,7 @@ export const health = new Hono();
 
 const startedAt = Date.now();
 
-function catalogStatus() {
+function catalogStatus(): CatalogStatus {
   const counts = catalogCounts();
   const last = lastSync("sites");
   return {
@@ -25,8 +26,8 @@ function catalogStatus() {
   };
 }
 
-health.get("/health", (c) =>
-  c.json({
+health.get("/health", (c) => {
+  const body: HealthResponse = {
     ok: true,
     version: VERSION,
     uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
@@ -35,8 +36,9 @@ health.get("/health", (c) =>
       vehiclePositions: vehiclePositionsAvailable(),
       subscribers: departureSubscriberCount() + vehicleSubscriberCount(),
     },
-  }),
-);
+  };
+  return c.json(body);
+});
 
 /**
  * Manual catalog refresh, for when SL publishes a timetable change mid-day.
@@ -80,7 +82,7 @@ if (env.ADMIN_TOKEN) {
  * and no error. `/api/ready` answers 503 until the catalog is queryable: stops loaded,
  * the search index built, and the derived pass finished. The e2e suite waits on this.
  */
-function readiness() {
+function readiness(): ReadyResponse {
   const counts = catalogCounts();
   const indexed = searchIndexSize();
   const derived = lastSync("derived");
