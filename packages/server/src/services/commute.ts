@@ -12,6 +12,7 @@ import type {
 import { cached } from "../db/cache.ts";
 import { trips, type TripEndpoint } from "../sl/journeyplanner.ts";
 import { resolvePlace } from "./places.ts";
+import { getPlace, getSettings, mergeSettings } from "./savedPlaces.ts";
 import { attachSiteIds } from "./journeys.ts";
 import { getNeighbourhood } from "./neighbourhood.ts";
 import { stopPointsNear } from "../db/catalog.ts";
@@ -50,22 +51,67 @@ const LOOKBACK_MS = 20 * 60 * 1000;
 type Endpoint = {
   ref: string;
   place: Place | null;
+  /** The saved label this end was named by, when it was named by one. */
+  label: string | null;
   lat: number;
   lon: number;
 };
 
 const COORD = /^(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/;
+const SAVED = /^place:(\d+)$/;
 
-async function resolveRef(ref: string): Promise<Endpoint> {
-  const m = COORD.exec(ref);
-  if (m) {
-    const lat = Number(m[1]);
-    const lon = Number(m[2]);
-    if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) return { ref, place: null, lat, lon };
+export type ParsedRef =
+  | { kind: "saved"; id: number }
+  | { kind: "coordinate"; lat: number; lon: number }
+  | { kind: "place"; id: string };
+
+/**
+ * What a `from`/`to` string is, before anything is looked up.
+ *
+ * Pure and exported so the three shapes can be tested without a database or SL. Note
+ * the order: "place:12" is checked first because a saved place id is ours to define,
+ * and a coordinate second because an SL place id never contains a comma.
+ */
+export function parseRef(ref: string): ParsedRef {
+  const saved = SAVED.exec(ref);
+  if (saved) return { kind: "saved", id: Number(saved[1]) };
+
+  const coord = COORD.exec(ref);
+  if (coord) {
+    const lat = Number(coord[1]);
+    const lon = Number(coord[2]);
+    if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) return { kind: "coordinate", lat, lon };
   }
-  const place = await resolvePlace(ref);
+  return { kind: "place", id: ref };
+}
+
+async function resolveRef(ref: string, userId: string): Promise<Endpoint> {
+  const parsed = parseRef(ref);
+
+  if (parsed.kind === "coordinate") {
+    return { ref, place: null, label: null, lat: parsed.lat, lon: parsed.lon };
+  }
+
+  if (parsed.kind === "saved") {
+    // Ownership is the WHERE clause: someone else's place id is a 404 here, the same
+    // 404 as an id that never existed.
+    const saved = getPlace(userId, parsed.id);
+    if (!saved) throw new AppError("unknown_place", `No saved place matches "${ref}"`, 404);
+    if (saved.ref) {
+      const place = await resolvePlace(saved.ref);
+      // A saved stop plans as the stop it points at, so SL picks the platform. When the
+      // underlying id no longer resolves -- an EFA address id can stop existing -- the
+      // stored coordinate still does, and planning from it is better than refusing to
+      // plan at all. Logged, because a run of these means saved places are decaying.
+      if (place) return { ref, place, label: saved.label, lat: place.lat, lon: place.lon };
+      log.warn(`saved place ${saved.id} no longer resolves ${saved.ref}; using its coordinate`);
+    }
+    return { ref, place: null, label: saved.label, lat: saved.lat, lon: saved.lon };
+  }
+
+  const place = await resolvePlace(parsed.id);
   if (!place) throw new AppError("unknown_place", `No place matches "${ref}"`, 404);
-  return { ref, place, lat: place.lat, lon: place.lon };
+  return { ref, place, label: null, lat: place.lat, lon: place.lon };
 }
 
 function slEndpoint(e: Endpoint): TripEndpoint {
@@ -314,14 +360,9 @@ export function foldDrafts(
   return [...live, ...missed];
 }
 
-export async function planCommute(query: CommuteQuery): Promise<CommuteResponse> {
-  const settings: CommuteSettings = {
-    speedKmh: query.speedKmh,
-    maxWalkMinutes: query.maxWalkMinutes,
-    transferPenaltyMinutes: query.transferPenaltyMinutes,
-    walkMultiplier: query.walkMultiplier,
-    catchBufferMinutes: query.catchBufferMinutes,
-  };
+export async function planCommute(query: CommuteQuery, userId: string): Promise<CommuteResponse> {
+  // The account is the default; the query overrides only what it actually names.
+  const settings: CommuteSettings = mergeSettings(getSettings(userId), query);
 
   let when: Date | undefined;
   if (query.when) {
@@ -333,7 +374,10 @@ export async function planCommute(query: CommuteQuery): Promise<CommuteResponse>
   const now = Date.now();
   const plannedFrom = when ? when.getTime() : now;
 
-  const [from, to] = await Promise.all([resolveRef(query.from), resolveRef(query.to)]);
+  const [from, to] = await Promise.all([
+    resolveRef(query.from, userId),
+    resolveRef(query.to, userId),
+  ]);
 
   // Enumerate the quieter end: that is the suburban end, where the choice of stop is
   // the actual decision, and the cheaper end to ask about. Decided on catalog density
@@ -404,6 +448,8 @@ export async function planCommute(query: CommuteQuery): Promise<CommuteResponse>
   return {
     from: from.place,
     to: to.place,
+    fromLabel: from.label,
+    toLabel: to.label,
     enumerated: side,
     options: foldDrafts(drafts, side, settings, plannedFrom, now),
     settings,

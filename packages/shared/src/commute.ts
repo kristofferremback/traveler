@@ -82,11 +82,19 @@ export type NeighbourhoodQuery = z.infer<typeof NeighbourhoodQuery>;
 
 /**
  * A place reference as it travels in a query string: a place id as used everywhere
- * else (stop gid, EFA address/POI id), or a bare "lat,lon".
+ * else (stop gid, EFA address/POI id), a bare "lat,lon", or "place:<id>" for one of the
+ * caller's own saved places.
  */
 export const PlaceRef = z.string().trim().min(1).max(400);
 
-export const CommuteQuery = CommuteSettings.extend({
+/**
+ * The five settings are optional here because an account keeps them.
+ *
+ * Absent means "use mine"; present means "just for this request". The service merges in
+ * that order, so a link that pins a walking speed keeps working and an agent that sends
+ * none gets the same answer the app shows.
+ */
+export const CommuteQuery = CommuteSettings.partial().extend({
   from: PlaceRef,
   to: PlaceRef,
   /** ISO instant to plan from. Absent means now. */
@@ -146,6 +154,14 @@ export type CommuteOption = z.infer<typeof CommuteOption>;
 export const CommuteResponse = z.object({
   from: Place.nullable(),
   to: Place.nullable(),
+  /**
+   * The saved label each end was named by, when it was named by one.
+   *
+   * Beside `from`/`to` rather than instead of them: the underlying place is still what
+   * was planned with, and the UI needs both to say "Hem (Jarlaberg)".
+   */
+  fromLabel: z.string().nullable().default(null),
+  toLabel: z.string().nullable().default(null),
   /** Which end the neighbourhood was enumerated on; the other end was left to SL. */
   enumerated: z.enum(["origin", "destination"]),
   /** Sorted best first; missed options last. */

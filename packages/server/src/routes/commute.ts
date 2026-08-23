@@ -8,12 +8,12 @@ export const commute = new Hono();
 
 /**
  * Door-to-door options between two places. `from`/`to` are place ids as everywhere
- * else, or "lat,lon". The walking settings ride along as query parameters until there
- * are accounts to hang them on.
+ * else, "lat,lon", or "place:<id>" for one of the caller's saved places. The walking
+ * settings come from the account; a query parameter overrides one for this request.
  */
 commute.get("/commute", async (c) => {
   const query = parseQuery(CommuteQuery, c);
-  return c.json(await planCommute(query));
+  return c.json(await planCommute(query, c.get("user").id));
 });
 
 /** The stops you can walk to from a coordinate, at your speed, with the street facts. */

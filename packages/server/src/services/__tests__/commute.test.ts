@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CommuteSettings, Journey, NeighbourStop } from "@traveler/shared";
-import { foldDrafts, type Draft } from "../commute.ts";
+import { foldDrafts, parseRef, type Draft } from "../commute.ts";
 
 const settings: CommuteSettings = {
   speedKmh: 6,
@@ -174,5 +174,40 @@ describe("foldDrafts", () => {
     });
     const options = foldDrafts([oneBus, twoBuses], "destination", settings, T0, T0);
     expect(options[0]!.vehicleKey).toBe("443:1");
+  });
+});
+
+/**
+ * `from`/`to` carry three different things in one string. Getting the order wrong is
+ * how "place:12" would become a search for a stop named "place:12" in Norrtälje.
+ */
+describe("parseRef", () => {
+  test("reads a saved place reference", () => {
+    expect(parseRef("place:12")).toEqual({ kind: "saved", id: 12 });
+  });
+
+  test("reads a coordinate", () => {
+    expect(parseRef("59.31557,18.16948")).toEqual({
+      kind: "coordinate",
+      lat: 59.31557,
+      lon: 18.16948,
+    });
+    expect(parseRef("59.31557, 18.16948")).toEqual({
+      kind: "coordinate",
+      lat: 59.31557,
+      lon: 18.16948,
+    });
+  });
+
+  test("anything else is an opaque place id, untouched", () => {
+    expect(parseRef("9091001000009192")).toEqual({ kind: "place", id: "9091001000009192" });
+    expect(parseRef("streetID:1234:5678")).toEqual({ kind: "place", id: "streetID:1234:5678" });
+    // Not a saved reference: the id has to be a number, and this is a stop named after
+    // a place rather than one of ours.
+    expect(parseRef("place:home")).toEqual({ kind: "place", id: "place:home" });
+  });
+
+  test("a coordinate off the globe is not a coordinate", () => {
+    expect(parseRef("95.0,18.0")).toEqual({ kind: "place", id: "95.0,18.0" });
   });
 });
