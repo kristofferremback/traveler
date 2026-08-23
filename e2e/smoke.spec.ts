@@ -1,5 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
-import { followInvite, mintInvite, signInContext, uniqueEmail } from "./auth";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { followInvite, mintInvite, signInContext, signInRequest, uniqueEmail } from "./auth";
 
 /**
  * These drive the real app in a real browser against live SL data, because the failures
@@ -71,7 +71,7 @@ test.describe("preconditions", () => {
 
 test.describe("planning a journey", () => {
   test("renders the form instead of a blank page", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/plan");
     await expect(fromField(page)).toBeVisible();
     await expect(toField(page)).toBeVisible();
     // The guard against a white screen: a crashed React root leaves an empty body.
@@ -79,14 +79,14 @@ test.describe("planning a journey", () => {
   });
 
   test("typeahead finds a stop and the keyboard selects it", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/plan");
     await pickStop(page, fromField(page), "gullmars", /Gullmarsplan/);
     // Selecting has to reach the URL; that is what makes a trip a shareable link.
     await expect(page).toHaveURL(/from=9091001000009189/);
   });
 
   test("arrow keys move through the suggestions", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/plan");
     const field = fromField(page);
     await field.click();
     await field.fill("gullmars");
@@ -106,13 +106,13 @@ test.describe("planning a journey", () => {
   });
 
   test("plain-ascii typing matches a stop spelled with diacritics", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/plan");
     // "sodermalmstorg" must find "Slussen/Södermalmstorg".
     await pickStop(page, toField(page), "sodermalmstorg", /Södermalmstorg/);
   });
 
   test("plans a real journey with times, duration and lines", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/plan");
     await pickStop(page, fromField(page), "gullmars", /Gullmarsplan/);
     await pickStop(page, toField(page), "t-centralen", /T-Centralen/);
 
@@ -123,7 +123,7 @@ test.describe("planning a journey", () => {
   });
 
   test("expanding a result reveals its legs", async ({ page }) => {
-    await page.goto("/?from=9091001000009189&to=9091001000009001");
+    await page.goto("/plan?from=9091001000009189&to=9091001000009001");
     const toggle = journeyCards(page).first().getByRole("button").first();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await toggle.click();
@@ -131,14 +131,14 @@ test.describe("planning a journey", () => {
   });
 
   test("a shared link restores the whole search", async ({ page }) => {
-    await page.goto("/?from=9091001000009189&to=9091001000009001");
+    await page.goto("/plan?from=9091001000009189&to=9091001000009001");
     await expect(fromField(page)).toHaveValue(/Gullmarsplan/);
     await expect(toField(page)).toHaveValue(/T-Centralen/);
     await expect(journeyCards(page).first()).toBeVisible({ timeout: 30_000 });
   });
 
   test("swapping endpoints updates both fields and the URL", async ({ page }) => {
-    await page.goto("/?from=9091001000009189&to=9091001000009001");
+    await page.goto("/plan?from=9091001000009189&to=9091001000009001");
     await expect(fromField(page)).toHaveValue(/Gullmarsplan/);
 
     await page.getByRole("button", { name: /byt plats/i }).click();
@@ -152,7 +152,7 @@ test.describe("planning a journey", () => {
   test("typing over a selected stop keeps what was typed", async ({ page }) => {
     // Regression: the value-sync effect treated this deselection as an external clear
     // and wiped the field on the first keystroke.
-    await page.goto("/?from=9091001000009189&to=9091001000009001");
+    await page.goto("/plan?from=9091001000009189&to=9091001000009001");
     const field = fromField(page);
     await expect(field).toHaveValue(/Gullmarsplan/);
     await field.click();
@@ -163,14 +163,14 @@ test.describe("planning a journey", () => {
   test("going Back clears a field the URL no longer names", async ({ page }) => {
     // Regression: local state outlived its URL parameter, so Back showed a stop that
     // was no longer part of the search.
-    await page.goto("/");
+    await page.goto("/plan");
     await pickStop(page, fromField(page), "gullmars", /Gullmarsplan/);
-    await page.goto("/");
+    await page.goto("/plan");
     await expect(fromField(page)).toHaveValue("");
   });
 
   test("shows the map on request", async ({ page }) => {
-    await page.goto("/?from=9091001000009189&to=9091001000009001");
+    await page.goto("/plan?from=9091001000009189&to=9091001000009001");
     await expect(journeyCards(page).first()).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "Karta" }).click();
     await expect(page.getByRole("application", { name: /karta/i })).toBeVisible();
@@ -265,6 +265,252 @@ test.describe("commute engine", () => {
   });
 });
 
+test.describe("saved places", () => {
+  /** Jarlaberg, Nacka: the stop this whole engine was built around. */
+  const JARLABERG = "9091001000004030";
+  const SLUSSEN = "9091001000009192";
+
+  async function saveHome(request: APIRequestContext): Promise<number> {
+    const created = await request.post("/api/places", {
+      data: { label: "Hem", placeId: JARLABERG },
+    });
+    expect(created.status()).toBe(201);
+    const { place } = await created.json();
+    return place.id as number;
+  }
+
+  test("keeps places per user", async ({ request, playwright, baseURL }) => {
+    const created = await request.post("/api/places", {
+      data: { label: "Hem", placeId: JARLABERG },
+    });
+    expect(created.status()).toBe(201);
+    const { place } = await created.json();
+    expect(place).toMatchObject({ label: "Hem", kind: "stop", name: "Jarlaberg", ref: JARLABERG });
+
+    // A second invited person. Ownership is a WHERE clause, so their list is empty and
+    // the other person's place is a 404 rather than a 403 -- which would confirm it
+    // exists.
+    const other = await playwright.request.newContext({ baseURL });
+    await signInRequest(other);
+
+    const list = await other.get("/api/places");
+    expect(list.status()).toBe(200);
+    expect((await list.json()).places).toEqual([]);
+
+    const foreign = await other.get(`/api/places/${place.id}`);
+    expect(foreign.status()).toBe(404);
+    await other.dispose();
+  });
+
+  test("computes a neighbourhood for a saved place and draws it", async ({ page, request }) => {
+    // The first read routes every walk from the place against Valhalla, one request a
+    // second.
+    test.setTimeout(180_000);
+
+    await page.goto("/places/new");
+    await page.getByLabel("Namn").fill("Hem");
+    await pickStop(page, page.getByRole("combobox", { name: "Plats" }), "jarlaberg", /Jarlaberg/);
+    await page.getByRole("button", { name: "Spara" }).click();
+
+    await expect(page).toHaveURL(/\/places\/\d+$/);
+    await expect(page.getByRole("heading", { name: "Hem", level: 1 })).toBeVisible();
+
+    // The pier is the proof the walk is routed rather than guessed: it is a different
+    // site, downhill, and a stop only a walking neighbourhood would offer.
+    await expect(page.getByText("Nacka strand").first()).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByText(/\d+ min dit · \d+ min hem/).first()).toBeVisible();
+    await expect(page.getByRole("application", { name: /Karta/ })).toBeVisible();
+
+    const id = Number(page.url().split("/").pop());
+    const hood = await request.get(`/api/places/${id}/neighbourhood`);
+    expect(hood.status()).toBe(200);
+    expect((await hood.json()).stops.length).toBeGreaterThanOrEqual(10);
+  });
+
+  test("plans a commute by saved label", async ({ request }) => {
+    test.setTimeout(180_000);
+    const id = await saveHome(request);
+
+    const res = await request.get(`/api/commute?from=${SLUSSEN}&to=place:${id}`);
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    // The label rides along beside the resolved place, so the UI can say "Hem" without
+    // losing which stop that is.
+    expect(body.toLabel).toBe("Hem");
+    expect(body.fromLabel).toBeNull();
+    expect(body.to.name).toBe("Jarlaberg");
+    expect(body.options.length).toBeGreaterThan(0);
+  });
+
+  test("applies the stored walking settings", async ({ request }) => {
+    test.setTimeout(180_000);
+    const id = await saveHome(request);
+
+    const saved = await request.put("/api/settings", { data: { maxWalkMinutes: 5 } });
+    expect(saved.status()).toBe(200);
+    expect((await saved.json()).settings).toMatchObject({ maxWalkMinutes: 5, speedKmh: 6 });
+
+    // Five minutes from the Jarlaberg stop reaches Jarlaberg and not much else.
+    const hood = await request.get(`/api/places/${id}/neighbourhood`);
+    expect(hood.status()).toBe(200);
+    const stops = (await hood.json()).stops as { name: string }[];
+    expect(stops.map((s) => s.name)).toContain("Jarlaberg");
+    expect(stops.length).toBeLessThanOrEqual(2);
+
+    // The bare-coordinate read follows the same settings; the two must not disagree about
+    // the same spot. A query override still wins for that one request.
+    const byCoord = await request.get(`/api/neighbourhood?lat=59.31557&lon=18.16948`);
+    expect(((await byCoord.json()).stops as unknown[]).length).toBeLessThanOrEqual(2);
+    const widened = await request.get(`/api/neighbourhood?lat=59.31557&lon=18.16948&maxWalkMinutes=20`);
+    expect(((await widened.json()).stops as unknown[]).length).toBeGreaterThan(10);
+
+    // A shorter walk is still a walk: the trip planner keeps working on the one stop.
+    const commute = await request.get(`/api/commute?from=${SLUSSEN}&to=place:${id}`);
+    expect(commute.status()).toBe(200);
+    expect((await commute.json()).options.length).toBeGreaterThan(0);
+
+    const restored = await request.put("/api/settings", { data: { maxWalkMinutes: 20 } });
+    expect((await restored.json()).settings.maxWalkMinutes).toBe(20);
+  });
+
+  test("renames and deletes a saved place", async ({ page, request }) => {
+    const id = await saveHome(request);
+    await page.goto(`/places/${id}`);
+
+    await page.getByRole("button", { name: "Byt namn" }).click();
+    await page.getByLabel("Namn").fill("Hemma");
+    await page.getByLabel("Namn").press("Enter");
+    await expect(page.getByRole("heading", { name: "Hemma", level: 1 })).toBeVisible();
+
+    // Deleting asks in place rather than through window.confirm, which cannot be styled
+    // and reads badly on a phone.
+    await page.getByRole("button", { name: "Ta bort", exact: true }).click();
+    await page.getByRole("button", { name: "Ta bort Hemma" }).click();
+    await expect(page).toHaveURL(/\/places$/);
+
+    expect((await request.get(`/api/places/${id}`)).status()).toBe(404);
+  });
+});
+
+test.describe("the commute screen", () => {
+  /** Two ends of the commute this whole engine was built around. */
+  const JARLABERG = "9091001000004030";
+  const SLUSSEN = "9091001000009192";
+
+  let trip = "";
+  let homeId = 0;
+
+  test.beforeEach(async ({ request }) => {
+    // The screen is about saved places, so it needs two before it means anything. The
+    // neighbourhood behind them is routed live on first use, which is why these are the
+    // slow tests in the suite.
+    test.setTimeout(180_000);
+    const work = await request.post("/api/places", {
+      data: { label: "Jobbet", placeId: SLUSSEN },
+    });
+    const home = await request.post("/api/places", {
+      data: { label: "Hem", placeId: JARLABERG },
+    });
+    expect(work.status()).toBe(201);
+    expect(home.status()).toBe(201);
+    const workId = (await work.json()).place.id as number;
+    homeId = (await home.json()).place.id as number;
+    trip = `/?from=place:${workId}&to=place:${homeId}`;
+  });
+
+  const sheet = (page: Page) => page.getByRole("region", { name: "Resor härifrån" });
+  const rows = (page: Page) =>
+    sheet(page).locator("ul > li").filter({ hasText: "Framme" });
+
+  test("shows ranked options between two saved places", async ({ page }) => {
+    await page.goto(trip);
+
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+    // Exactly one recommendation: two would be a contradiction, none would leave the
+    // traveller to rank the list themselves.
+    await expect(sheet(page).getByText("Rekommenderad")).toHaveCount(1);
+    // Both halves of the decision are on the row: when to stand up, and when you land.
+    await expect(rows(page).first()).toContainText(/Gå (nu|om \d+ min|\d{2}:\d{2})/);
+    await expect(rows(page).first()).toContainText(/Framme \d{2}:\d{2}/);
+  });
+
+  test("draws the option that was tapped", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/commute")) asked.push(r.url());
+    });
+
+    await page.goto(trip);
+    await expect(rows(page).nth(1)).toBeVisible({ timeout: 120_000 });
+
+    const second = rows(page).nth(1).getByRole("button").first();
+    await second.click();
+    await expect(second).toHaveAttribute("aria-pressed", "true");
+    // Selecting expands the legs -- the stop-by-stop list is the row's own detail.
+    await expect(rows(page).nth(1).locator("li").first()).toBeVisible();
+    // The geometry for a row that is not the recommended one is not in the first
+    // response, so drawing it has to go and fetch it rather than draw nothing.
+    await expect
+      .poll(() => asked.some((url) => url.includes("paths=all")), { timeout: 30_000 })
+      .toBe(true);
+  });
+
+  test("keeps from and to in the URL and swaps them", async ({ page }) => {
+    await page.goto(trip);
+    const from = page.getByRole("button", { name: /^Från/ });
+    await expect(from).toContainText("Jobbet");
+
+    await page.getByRole("button", { name: /byt plats/i }).click();
+
+    await expect(page).toHaveURL(new RegExp(`from=place%3A${homeId}`));
+    await expect(from).toContainText("Hem");
+    await expect(page.getByRole("button", { name: /^Till/ })).toContainText("Jobbet");
+  });
+
+  test("picks a place from the chip picker, and Back closes it", async ({ page }) => {
+    await page.goto(trip);
+    await page.getByRole("button", { name: /^Från/ }).click();
+
+    const picker = page.getByRole("dialog", { name: "Välj var du börjar" });
+    await expect(picker).toBeVisible();
+
+    // An overlay that Back does not close is a trap on a phone, where Back is a gesture.
+    await page.goBack();
+    await expect(picker).toBeHidden();
+
+    await page.getByRole("button", { name: /^Från/ }).click();
+    await page.getByRole("dialog").getByRole("button", { name: /Hem/ }).click();
+    await expect(page).toHaveURL(new RegExp(`from=place%3A${homeId}`));
+  });
+
+  test("survives an API outage without a white screen", async ({ page }) => {
+    await page.route("**/api/commute*", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "boom", message: "Kunde inte hämta resor." } }),
+      }),
+    );
+    await page.goto(trip);
+
+    await expect(page.getByRole("button", { name: "Försök igen" })).toBeVisible();
+    expect((await page.locator("body").innerText()).trim().length).toBeGreaterThan(20);
+  });
+
+  test("looks right in both themes", async ({ page }) => {
+    // Not asserted: a screenshot is for a human to look at. It fails only if the screen
+    // cannot be reached at all, which is worth knowing on its own.
+    for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto(trip);
+      await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+      // The basemap tiles settle a beat after the rows do.
+      await page.waitForTimeout(3000);
+      await page.screenshot({ path: `.e2e/explore/commute-${scheme}.png` });
+    }
+  });
+});
+
 test.describe("other surfaces", () => {
   test("disruptions default to real disruptions, not every notice", async ({ page }) => {
     await page.goto("/disruptions");
@@ -320,21 +566,23 @@ test.describe("other surfaces", () => {
   });
 
   test("every touch target clears 44 px", async ({ page }) => {
-    await page.goto("/");
-    const small = await page.evaluate(() =>
-      [...document.querySelectorAll("button, a[href], input, [role=tab]")]
-        .filter((el) => {
-          const r = el.getBoundingClientRect();
-          return r.width > 0 && r.height > 0 && r.height < 44;
-        })
-        .map((el) => `${el.tagName} h=${Math.round(el.getBoundingClientRect().height)}`),
-    );
-    expect(small).toEqual([]);
+    for (const path of ["/", "/plan"]) {
+      await page.goto(path);
+      const small = await page.evaluate(() =>
+        [...document.querySelectorAll("button, a[href], input, [role=tab]")]
+          .filter((el) => {
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && r.height < 44;
+          })
+          .map((el) => `${el.tagName} h=${Math.round(el.getBoundingClientRect().height)}`),
+      );
+      expect(small, path).toEqual([]);
+    }
   });
 
-  test("survives an API outage without a white screen", async ({ page }) => {
+  test("the planner survives an API outage without a white screen", async ({ page }) => {
     await page.route("**/api/journeys*", (route) => route.abort());
-    await page.goto("/?from=9091001000009189&to=9091001000009001");
+    await page.goto("/plan?from=9091001000009189&to=9091001000009001");
     await expect(page.getByRole("button", { name: "Försök igen" })).toBeVisible();
     expect((await page.locator("body").innerText()).trim().length).toBeGreaterThan(20);
   });
@@ -389,7 +637,7 @@ test.describe("sign-in and the gate", () => {
     // "Hoppa över" is a real way out; adding a passkey must not be a wall.
     await page.getByRole("link", { name: "Hoppa över" }).click();
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole("combobox", { name: "Från" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Från/ })).toBeVisible();
 
     await context.close();
   });
@@ -482,6 +730,28 @@ test.describe("sign-in and the gate", () => {
     await wrong.dispose();
   });
 
+  test("an API key over its rate limit gets a 429, not a 401", async ({ request, playwright, baseURL }) => {
+    test.setTimeout(120_000);
+    // The api-key plugin throws for both an unknown key and an exhausted one; the gate has
+    // to tell them apart, or an agent that is merely too fast is told its key is bad.
+    const created = await request.post("/api/auth/api-key/create", {
+      data: { name: "e2e-rate" },
+      headers: { origin: baseURL! },
+    });
+    const key = (await created.json()).key as string;
+    const agent = await playwright.request.newContext({ baseURL, extraHTTPHeaders: { "x-api-key": key } });
+    let last = 0;
+    for (let i = 0; i < 125 && last !== 429; i++) {
+      last = (await agent.get("/api/me")).status();
+      expect([200, 429]).toContain(last);
+    }
+    expect(last).toBe(429);
+    const refused = await agent.get("/api/me");
+    expect(refused.status()).toBe(429);
+    expect((await refused.json()).error.code).toBe("rate_limited");
+    await agent.dispose();
+  });
+
   test("the settings page hands over a working invite link and a QR code", async ({
     page,
     browser,
@@ -553,7 +823,7 @@ test.describe("sign-in and the gate", () => {
     // The point of the whole exercise: a second sign-in with no link and no password.
     await page.getByRole("button", { name: "Logga in med passkey" }).click();
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole("combobox", { name: "Från" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Från/ })).toBeVisible();
 
     await context.close();
   });

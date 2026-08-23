@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { InviteRequest } from "@traveler/shared";
+import { InviteRequest, type InvitesResponse, type MeResponse } from "@traveler/shared";
 import { auth } from "../auth/auth.ts";
 import { createInvite, listInvites } from "../auth/invites.ts";
 import { AppError } from "../lib/errors.ts";
@@ -30,7 +30,7 @@ account.get("/me", async (c) => {
   const listed = await auth.api.listApiKeys({ headers }).catch(() => []);
   const apiKeys = Array.isArray(listed) ? listed : listed.apiKeys;
 
-  return c.json({
+  const body: MeResponse = {
     user: { id: user.id, email: user.email, name: user.name },
     passkeys: passkeys.map((p) => ({
       id: p.id,
@@ -45,7 +45,8 @@ account.get("/me", async (c) => {
       lastRequest: iso(k.lastRequest),
       expiresAt: iso(k.expiresAt),
     })),
-  });
+  };
+  return c.json(body);
 });
 
 /**
@@ -77,11 +78,12 @@ account.post("/invites", async (c) => {
 /** The caller's own unexpired invites. The link stays readable so it can be resent. */
 account.get("/invites", (c) => {
   const rows = listInvites(c.get("user").id);
-  return c.json({
+  const body: InvitesResponse = {
     invites: rows.map((r) => ({
       email: r.email,
       url: r.url,
       expiresAt: r.expires_at,
     })),
-  });
+  };
+  return c.json(body);
 });

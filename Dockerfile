@@ -27,6 +27,12 @@ COPY --from=build /app/packages/web/dist ./packages/web/dist
 ENV PORT=3000
 EXPOSE 3000
 
+# The server binds loopback by default, which is right on a laptop and fatal in a
+# container: Railway's proxy and healthcheck reach the service over the container's
+# network interface, not its loopback. Inside the image, every interface is the
+# container's own, so binding wide is safe here and only here.
+ENV HOST=0.0.0.0
+
 # The default database path lives outside the image; point DATABASE_PATH at the volume.
 ENV DATABASE_PATH=/data/traveler.db
 

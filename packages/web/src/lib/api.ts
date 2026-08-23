@@ -1,4 +1,6 @@
 import type {
+  CommuteResponse,
+  CommuteSettings,
   DeparturesResponse,
   DeviationsResponse,
   HealthResponse,
@@ -6,7 +8,12 @@ import type {
   JourneyResponse,
   InviteResponse,
   MeResponse,
+  Neighbourhood,
   Place,
+  SavedPlace,
+  SavedPlaceInput,
+  SavedPlacePatch,
+  UserSettingsPatch,
   VehiclesResponse,
 } from "@traveler/shared";
 
@@ -72,14 +79,20 @@ async function get<T>(path: string, params: Params = {}, signal?: AbortSignal): 
   return (await res.json()) as T;
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function send<T>(method: string, path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}/api${path}`, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw await failure(res);
   return (await res.json()) as T;
+}
+
+/** A 204 has no body to parse, so this one returns nothing rather than `unknown`. */
+async function remove(path: string): Promise<void> {
+  const res = await fetch(`${BASE}/api${path}`, { method: "DELETE" });
+  if (!res.ok) throw await failure(res);
 }
 
 export const api = {
@@ -125,6 +138,16 @@ export const api = {
     signal?: AbortSignal,
   ) => get<JourneyResponse>("/journeys", params, signal),
 
+  /**
+   * Door-to-door options between two places. `from`/`to` are place ids, "lat,lon", or
+   * "place:<id>" for a saved place. `paths` decides how much drawn geometry comes back;
+   * the default carries only the recommended option's.
+   */
+  commute: (
+    params: { from: string; to: string; when?: string; paths?: "recommended" | "all" | "none" },
+    signal?: AbortSignal,
+  ) => get<CommuteResponse>("/commute", params, signal),
+
   deviations: (
     params: { site?: string; line?: string; modes?: string; minSeverity?: string },
     signal?: AbortSignal,
@@ -136,7 +159,28 @@ export const api = {
   me: (signal?: AbortSignal) => get<MeResponse>("/me", {}, signal),
 
   createInvite: (body: { email: string; name?: string }) =>
-    post<InviteResponse>("/invites", body),
+    send<InviteResponse>("POST", "/invites", body),
+
+  places: {
+    list: (signal?: AbortSignal) => get<{ places: SavedPlace[] }>("/places", {}, signal),
+    create: (body: SavedPlaceInput) => send<{ place: SavedPlace }>("POST", "/places", body),
+    get: (id: number, signal?: AbortSignal) =>
+      get<{ place: SavedPlace }>(`/places/${id}`, {}, signal),
+    patch: (id: number, body: SavedPlacePatch) =>
+      send<{ place: SavedPlace }>("PATCH", `/places/${id}`, body),
+    delete: (id: number) => remove(`/places/${id}`),
+    neighbourhood: (
+      id: number,
+      params: { isochrones?: boolean; speedKmh?: number; maxWalkMinutes?: number } = {},
+      signal?: AbortSignal,
+    ) => get<Neighbourhood>(`/places/${id}/neighbourhood`, params, signal),
+  },
+
+  settings: {
+    get: (signal?: AbortSignal) => get<{ settings: CommuteSettings }>("/settings", {}, signal),
+    put: (body: UserSettingsPatch) =>
+      send<{ settings: CommuteSettings }>("PUT", "/settings", body),
+  },
 };
 
 /** Stream URLs, for the SSE hook. */

@@ -10,21 +10,54 @@ const int = z.coerce.number().int();
  * which stops count as reachable) is a function of these, so they are inputs to every
  * read rather than baked into stored data.
  */
+/**
+ * The bounds, kept apart from the defaults.
+ *
+ * Two schemas are built from these: the settled one, where every field has a default,
+ * and the override one, where an absent field stays absent. `.partial()` cannot produce
+ * the second -- it makes a field optional but leaves its default in place, so parsing an
+ * empty query would hand back all five defaults and quietly overwrite whatever the
+ * account had stored.
+ */
+const speedKmh = numeric.min(2).max(10);
+const maxWalkMinutes = int.min(1).max(45);
+/** Minutes a change costs in the ranking. One bus beats two at roughly the same time. */
+const transferPenaltyMinutes = numeric.min(0).max(60);
+/** 1 = a minute walking weighs the same as a minute riding. Exposed, not used to tune yet. */
+const walkMultiplier = numeric.min(0).max(5);
+/** Minutes of slack before a departure counts as "you can still make it". */
+const catchBufferMinutes = numeric.min(0).max(15);
+
 export const WalkSettings = z.object({
-  speedKmh: numeric.min(2).max(10).default(6),
-  maxWalkMinutes: int.min(1).max(45).default(20),
+  speedKmh: speedKmh.default(6),
+  maxWalkMinutes: maxWalkMinutes.default(20),
 });
 export type WalkSettings = z.infer<typeof WalkSettings>;
 
-export const CommuteSettings = WalkSettings.extend({
-  /** Minutes a change costs in the ranking. One bus beats two at roughly the same time. */
-  transferPenaltyMinutes: numeric.min(0).max(60).default(5),
-  /** 1 = a minute walking weighs the same as a minute riding. Exposed, not used to tune yet. */
-  walkMultiplier: numeric.min(0).max(5).default(1),
-  /** Minutes of slack before a departure counts as "you can still make it". */
-  catchBufferMinutes: numeric.min(0).max(15).default(1),
+export const CommuteSettings = z.object({
+  speedKmh: speedKmh.default(6),
+  maxWalkMinutes: maxWalkMinutes.default(20),
+  transferPenaltyMinutes: transferPenaltyMinutes.default(5),
+  walkMultiplier: walkMultiplier.default(1),
+  catchBufferMinutes: catchBufferMinutes.default(1),
 });
 export type CommuteSettings = z.infer<typeof CommuteSettings>;
+
+/** The same fields with nothing filled in: what a caller actually said, and no more. */
+export const WalkSettingsOverrides = z.object({
+  speedKmh: speedKmh.optional(),
+  maxWalkMinutes: maxWalkMinutes.optional(),
+});
+export type WalkSettingsOverrides = z.infer<typeof WalkSettingsOverrides>;
+
+export const CommuteSettingsOverrides = z.object({
+  speedKmh: speedKmh.optional(),
+  maxWalkMinutes: maxWalkMinutes.optional(),
+  transferPenaltyMinutes: transferPenaltyMinutes.optional(),
+  walkMultiplier: walkMultiplier.optional(),
+  catchBufferMinutes: catchBufferMinutes.optional(),
+});
+export type CommuteSettingsOverrides = z.infer<typeof CommuteSettingsOverrides>;
 
 /**
  * A stop point reachable on foot from a place, with the walk described in facts that do
@@ -70,7 +103,11 @@ export const Neighbourhood = z.object({
 });
 export type Neighbourhood = z.infer<typeof Neighbourhood>;
 
-export const NeighbourhoodQuery = WalkSettings.extend({
+/**
+ * Reading the neighbourhood of a bare coordinate. The account's stored settings decide
+ * it, like every other read; the query may override the two that change what comes back.
+ */
+export const NeighbourhoodQuery = WalkSettingsOverrides.extend({
   lat: numeric.min(-90).max(90),
   lon: numeric.min(-180).max(180),
   isochrones: z
@@ -82,15 +119,32 @@ export type NeighbourhoodQuery = z.infer<typeof NeighbourhoodQuery>;
 
 /**
  * A place reference as it travels in a query string: a place id as used everywhere
- * else (stop gid, EFA address/POI id), or a bare "lat,lon".
+ * else (stop gid, EFA address/POI id), a bare "lat,lon", or "place:<id>" for one of the
+ * caller's own saved places.
  */
 export const PlaceRef = z.string().trim().min(1).max(400);
 
-export const CommuteQuery = CommuteSettings.extend({
+/**
+ * The five settings are optional here because an account keeps them.
+ *
+ * Absent means "use mine"; present means "just for this request". The service merges in
+ * that order, so a link that pins a walking speed keeps working and an agent that sends
+ * none gets the same answer the app shows.
+ */
+export const CommuteQuery = CommuteSettingsOverrides.extend({
   from: PlaceRef,
   to: PlaceRef,
   /** ISO instant to plan from. Absent means now. */
   when: z.string().optional(),
+  /**
+   * How much drawn geometry to send back.
+   *
+   * The leg paths are most of the bytes in a response and only one option is on the map
+   * at a time, so the default carries the recommended option's and empties the rest.
+   * `all` is what a client asks for when the traveller picks another row; `none` is for
+   * a caller with no map at all.
+   */
+  paths: z.enum(["recommended", "all", "none"]).default("recommended"),
 });
 export type CommuteQuery = z.infer<typeof CommuteQuery>;
 
@@ -146,6 +200,14 @@ export type CommuteOption = z.infer<typeof CommuteOption>;
 export const CommuteResponse = z.object({
   from: Place.nullable(),
   to: Place.nullable(),
+  /**
+   * The saved label each end was named by, when it was named by one.
+   *
+   * Beside `from`/`to` rather than instead of them: the underlying place is still what
+   * was planned with, and the UI needs both to say "Hem (Jarlaberg)".
+   */
+  fromLabel: z.string().nullable().default(null),
+  toLabel: z.string().nullable().default(null),
   /** Which end the neighbourhood was enumerated on; the other end was left to SL. */
   enumerated: z.enum(["origin", "destination"]),
   /** Sorted best first; missed options last. */

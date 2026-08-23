@@ -10,3 +10,7 @@ data
 test-results
 playwright-report
 e2e
+.e2e
+.threa-attachments
+.env
+.env.local

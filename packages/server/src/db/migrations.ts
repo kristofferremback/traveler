@@ -237,4 +237,45 @@ export const MIGRATIONS: readonly string[] = [
     used_at     TEXT
   );
   `,
+
+  // 8 -- saved places and walking settings, owned by an account.
+  //
+  //      This is what migration 5 removed and said would come back with an owner. The
+  //      owner is `user_id`, it is NOT NULL, and every query filters on it, so "whose
+  //      row is this" is answered by the WHERE clause rather than by a check after the
+  //      read that someone can forget to write.
+  //
+  //      The place's coordinate is stored rather than resolved on read: it is the key
+  //      the walking neighbourhood is computed against, and a saved place must survive
+  //      an EFA address id that stops resolving. `ref` keeps the underlying place id so
+  //      trips can still be planned by it.
+  //
+  //      Settings are a row per user with the same defaults as the schema, so a missing
+  //      row and a fresh row mean the same thing and nothing has to backfill.
+  `
+  CREATE TABLE places (
+    id          INTEGER PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    label       TEXT NOT NULL,
+    kind        TEXT NOT NULL CHECK (kind IN ('stop','address','poi','coordinate')),
+    ref         TEXT,
+    name        TEXT NOT NULL,
+    lat         REAL NOT NULL,
+    lon         REAL NOT NULL,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+  );
+  CREATE INDEX places_user_idx ON places(user_id, sort_order, id);
+
+  CREATE TABLE user_settings (
+    user_id                   TEXT PRIMARY KEY REFERENCES "user"(id) ON DELETE CASCADE,
+    speed_kmh                 REAL NOT NULL DEFAULT 6,
+    max_walk_minutes          INTEGER NOT NULL DEFAULT 20,
+    transfer_penalty_minutes  REAL NOT NULL DEFAULT 5,
+    walk_multiplier           REAL NOT NULL DEFAULT 1,
+    catch_buffer_minutes      REAL NOT NULL DEFAULT 1,
+    updated_at                TEXT NOT NULL
+  );
+  `,
 ];

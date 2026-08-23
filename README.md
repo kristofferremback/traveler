@@ -46,14 +46,69 @@ a plain `http://192.168.x.x` does not: use `./run-tailscale.sh` to reach it from
 phone. A passkey is bound to the hostname in `AUTH_BASE_URL`, so changing that origin
 makes existing passkeys unusable and everyone needs a new invite.
 
-For agents and scripts, **Mer -> API-nycklar** creates a key, shown once:
+For agents and scripts, **Mer -> API-nycklar** creates a key, shown once. A key is a
+session, so it reaches every route the browser does; see "API for agents" below. Set
+`AUTH_SECRET` and `AUTH_BASE_URL` before deploying; see `.env.example`.
 
-```bash
-curl -H "x-api-key: $KEY" "http://localhost:3000/api/commute?from=...&to=..."
+## API for agents
+
+```
+GET /api/openapi.json
 ```
 
-A key is a session, so it reaches every route the browser does. Set `AUTH_SECRET` and
-`AUTH_BASE_URL` before deploying; see `.env.example`.
+An OpenAPI 3.1 document covering every route, parameter and response shape, public
+because it is the contract rather than data. It is generated from the same zod schemas
+the routes validate and build with, and a test fails the build if a route exists that
+the document does not describe. The pairing of each route with its schema is still
+written by hand in `packages/server/src/openapi/registry.ts`, so that file is the one to
+edit when a route changes shape.
+
+Mint a key in the app under **Mer -> API-nycklar**, then send it as `x-api-key`:
+
+```bash
+curl -H "x-api-key: $KEY" \
+  "http://localhost:3000/api/commute?from=place:1&to=place:2"
+```
+
+`/api/commute` is the one an agent usually wants: door-to-door options with the walk at
+both ends, when to leave, and whether the departure is still catchable. `from` and `to`
+take a place id from `/api/places/search`, a bare `lat,lon`, or `place:<id>` for one of
+your own saved places.
+
+The limit is 120 requests a minute per key. Over that is a 429.
+
+To create a key from the command line instead of the app, call Better Auth with a
+session cookie. Its endpoints, and only its endpoints, also require an `Origin` header
+matching the instance:
+
+```bash
+curl -X POST "http://localhost:3000/api/auth/api-key/create" \
+  -H "content-type: application/json" \
+  -H "origin: http://localhost:3000" \
+  -H "cookie: better-auth.session_token=$COOKIE" \
+  -d '{"name":"my agent"}'
+```
+
+The `/stream` routes answer `text/event-stream` instead of JSON: events named
+`departures`, `vehicles` and `deviations` carry the same bodies their non-streaming
+counterparts return, `stream-error` reports an upstream failure that did not end the
+stream, and `ping` is a heartbeat every 25 seconds.
+
+## Saved places
+
+A place is anything you would name: a stop, an address, a point of interest, or a bare
+coordinate. You give it a label -- "Hem", "Jobbet" -- and the underlying place keeps its
+own name, so renaming never loses which stop it actually is. Saving one starts computing
+its walking neighbourhood in the background, so by the time the place page opens the map
+can draw what you can reach on foot: the isochrone rings, the routed walk to each stop,
+and how many minutes it is there and back. The two differ, because the hill does.
+
+**Mer -> Promenad** keeps the five walking settings on the account instead of in every
+query string: speed, longest walk, what a change costs in the ranking, how walking time is
+weighted, and the margin before a departure counts as missed. `/api/commute` uses them
+by default, accepts `place:<id>` for a saved place at either end, and still takes any of
+the five as a query parameter to override just that request. Places belong to their
+owner: every statement filters on the account, so someone else's id is a 404.
 
 ## The SL APIs
 
@@ -154,20 +209,36 @@ The server binds to `127.0.0.1` unless `HOST` says otherwise, so nothing reaches
 except through the proxy. `tailscale serve` is tailnet-only; `tailscale funnel` would
 put it on the public internet, which this app is not built for.
 
+The script runs the server in production mode with `AUTH_BASE_URL` set to the tailnet
+address (passkeys register against it, invite links are built from it) and generates an
+`AUTH_SECRET` into the repo-root `.env` the first time. Mint the first account from
+another shell: `AUTH_BASE_URL=https://<machine>.<tailnet>.ts.net:8443 bun run invite you@example.com`,
+open the link on the phone, add a passkey. A passkey made here will not be offered on a
+different hostname later; that is a new invite, not a bug.
+
 ## Maps
 
-MapLibre with a Protomaps `.pmtiles` archive on the volume. No key, no tile server, and
-the browser reads only the ranges it needs.
+MapLibre, and no map key anywhere. `GET /api/map/style.json?theme=dark|light` answers
+with one of two basemaps.
+
+By default, [OpenFreeMap](https://openfreemap.org): keyless, no quota, no account, dark
+and positron flavours, and their styles carry the OpenStreetMap attribution they owe.
+The server caches the style JSON for six hours and passes it through untouched. If it
+cannot be fetched the endpoint answers 502 and the app says the ground is missing —
+there is no quiet second choice, because a basemap nobody picked is worse than a visibly
+absent one.
+
+To self-host instead, put a Protomaps `.pmtiles` archive on the volume and set
+`PMTILES_PATH`. The browser then reads only the byte ranges it needs, straight off the
+volume, and the style switches to a deliberately quiet vector one in both themes.
 
 ```bash
 pmtiles extract https://build.protomaps.com/<date>.pmtiles stockholm.pmtiles \
   --bbox=17.4,58.9,19.2,60.1
 ```
 
-Put it on the volume and set `PMTILES_PATH`. Without it the style falls back to
-OpenStreetMap raster tiles, which is fine for development and not allowed for an app in
-regular use under the OSMF tile policy. The fallback says so in the log and in the
-attribution.
+`VITE_MAP_STYLE` overrides the whole style URL at build time, for a basemap that is
+neither of these.
 
 ## Deploying
 
@@ -191,10 +262,26 @@ index is built, and names what is missing. Anything that needs the catalog to ac
 work should wait on this. Waiting on `/api/health` instead gets you a server that
 returns `{"places": []}` for every search and no error.
 
-Railway, one service, Dockerfile build. Mount a volume and set `DATABASE_PATH` to a path
-on it, for example `/data/traveler.db`. On first boot the catalog is empty, so the
-server starts a sync in the background and answers health checks while it runs. It takes
-about five seconds.
+Railway, one service, one volume, defined in `.railway/railway.ts` (Railway's
+infrastructure-as-code; `railway.json`/`railway.toml` are deprecated by Railway until
+December 2026). The file names the Dockerfile build, the `/api/health` healthcheck, the
+restart policy, the `/data` volume and the variables; secrets are `preserve()`d and live
+only in Railway.
+
+1. `railway login`, then in the repo: `railway link` to the project (or `railway init`
+   for a new one) and `railway config plan` to see what differs from the file.
+2. `railway config apply` creates or updates the service and volume to match.
+3. Set the secrets once: `railway variable set AUTH_SECRET=$(openssl rand -base64 32)`
+   and `AUTH_BASE_URL=https://<your domain>`. Optional: `ADMIN_TOKEN`, `TRAFIKLAB_GTFS_RT_KEY`.
+4. Put the final domain on the service before the first invite is followed there.
+   Passkeys are registered against `AUTH_BASE_URL`'s hostname; changing it later means a
+   new invite and a new passkey for each person.
+5. Mint the first invite from the Railway shell: `railway ssh -- bun run invite you@example.com`.
+
+The image sets `HOST=0.0.0.0`: the server binds loopback by default, which is right on a
+laptop and wrong in a container, where Railway's proxy reaches it over the container
+interface. On first boot the catalog is empty, so the server starts a sync in the
+background and answers health checks while it runs. It takes about twenty seconds.
 
 The catalog re-syncs every 24 hours, and also on boot if the last successful sync is
 older than that, since a service that redeploys daily would otherwise never reach a

@@ -47,6 +47,29 @@ export type NearbyQuery = z.infer<typeof NearbyQuery>;
 export const PlaceSearchResponse = z.object({ places: z.array(Place) });
 export type PlaceSearchResponse = z.infer<typeof PlaceSearchResponse>;
 
+/** One place, the answer to a resolve or a stop lookup. */
+export const PlaceResponse = z.object({ place: Place });
+export type PlaceResponse = z.infer<typeof PlaceResponse>;
+
+/** Where a coordinate is: the address it reverse-geocodes to, plus the stops around it. */
+export const LocateResponse = z.object({
+  place: Place.nullable(),
+  nearby: z.array(Place),
+});
+export type LocateResponse = z.infer<typeof LocateResponse>;
+
+/** Place ids contain colons and slashes, so they travel as a query parameter. */
+export const PlaceResolveQuery = z.object({
+  id: z.string({ error: "Pass the place id as ?id=" }).min(1, "Pass the place id as ?id="),
+});
+export type PlaceResolveQuery = z.infer<typeof PlaceResolveQuery>;
+
+export const PlaceLocateQuery = z.object({
+  lat: z.coerce.number({ error: "Pass ?lat= and ?lon=" }),
+  lon: z.coerce.number({ error: "Pass ?lat= and ?lon=" }),
+});
+export type PlaceLocateQuery = z.infer<typeof PlaceLocateQuery>;
+
 export const DeparturesQuery = z.object({
   /**
    * Minutes ahead. SL defaults to 60; we ask explicitly so the board is predictable.
@@ -161,6 +184,8 @@ export const CatalogStatus = z.object({
   lastChange: z
     .object({ added: z.number(), updated: z.number(), removed: z.number() })
     .nullable(),
+  /** True while a sync is in flight, so a caller can tell "empty" from "still filling". */
+  syncRunning: z.boolean(),
 });
 export type CatalogStatus = z.infer<typeof CatalogStatus>;
 
@@ -172,6 +197,19 @@ export const HealthResponse = z.object({
   realtime: z.object({ vehiclePositions: z.boolean(), subscribers: z.number() }),
 });
 export type HealthResponse = z.infer<typeof HealthResponse>;
+
+/**
+ * Readiness, as distinct from liveness: 200 once the catalog can answer, 503 until then,
+ * with `reasons` naming what is still missing.
+ */
+export const ReadyResponse = z.object({
+  ready: z.boolean(),
+  reasons: z.array(z.string()),
+  syncRunning: z.boolean(),
+  sites: z.number().int(),
+  indexed: z.number().int(),
+});
+export type ReadyResponse = z.infer<typeof ReadyResponse>;
 
 // --- Account ----------------------------------------------------------------
 
@@ -189,6 +227,10 @@ export const InviteResponse = z.object({
   expiresAt: z.string(),
 });
 export type InviteResponse = z.infer<typeof InviteResponse>;
+
+/** The caller's own invites that can still be followed. */
+export const InvitesResponse = z.object({ invites: z.array(InviteResponse) });
+export type InvitesResponse = z.infer<typeof InvitesResponse>;
 
 export const MeResponse = z.object({
   user: z.object({ id: z.string(), email: z.string(), name: z.string() }),
@@ -222,9 +264,22 @@ export const ApiError = z.object({
 });
 export type ApiError = z.infer<typeof ApiError>;
 
+/**
+ * The payload of the SSE `stream-error` event: an upstream failure reported on an open
+ * stream, which is not the same thing as the stream itself ending.
+ */
+export const StreamError = z.object({ code: z.string(), message: z.string() });
+export type StreamError = z.infer<typeof StreamError>;
+
 /** Discriminated union of everything the SSE endpoints emit. */
 export type StreamEvent =
   | { type: "departures"; data: DeparturesResponse }
   | { type: "vehicles"; data: VehiclesResponse }
   | { type: "deviations"; data: DeviationsResponse }
-  | { type: "error"; data: { code: string; message: string } };
+  | { type: "error"; data: StreamError };
+
+/** Which flavour of the basemap style to return. Anything else is a 400, not a silent dark. */
+export const MapStyleQuery = z.object({
+  theme: z.enum(["dark", "light"]).default("dark"),
+});
+export type MapStyleQuery = z.infer<typeof MapStyleQuery>;
