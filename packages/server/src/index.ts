@@ -111,12 +111,13 @@ startScheduler();
 
 const server = Bun.serve({
   port: env.PORT,
+  hostname: env.HOST,
   // SSE connections are long-lived by design; the default timeout would sever them.
   idleTimeout: 0,
   fetch: app.fetch,
 });
 
-log.info(`Traveler ${VERSION} listening on http://localhost:${server.port}`);
+log.info(`Traveler ${VERSION} listening on http://${env.HOST}:${server.port}`);
 log.info(`database: ${env.DATABASE_PATH}`);
 log.info(`frontend: ${hasWeb ? webDist : "not built"}`);
 log.info(

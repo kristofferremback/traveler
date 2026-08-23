@@ -2,6 +2,15 @@ import { z } from "zod";
 
 const Env = z.object({
   PORT: z.coerce.number().int().default(3000),
+  /**
+   * Interface to bind. Loopback by default.
+   *
+   * Bun.serve binds to every interface when given no hostname -- it reports "localhost"
+   * but the socket is on `*` -- so a dev server is reachable from the whole LAN without
+   * anyone deciding it should be. Exposure is opt-in: set HOST=0.0.0.0, or better, put
+   * `tailscale serve` in front and leave this alone.
+   */
+  HOST: z.string().default("127.0.0.1"),
   DATABASE_PATH: z.string().default("./data/traveler.db"),
   TRAFIKLAB_GTFS_RT_KEY: z
     .string()
