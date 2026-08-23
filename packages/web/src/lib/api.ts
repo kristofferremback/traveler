@@ -4,6 +4,8 @@ import type {
   HealthResponse,
   Journey,
   JourneyResponse,
+  InviteResponse,
+  MeResponse,
   Place,
   VehiclesResponse,
 } from "@traveler/shared";
@@ -33,20 +35,50 @@ function query(params: Params): string {
   return encoded ? `?${encoded}` : "";
 }
 
+/**
+ * A session that expired mid-use looks like every request suddenly failing, which is a
+ * confusing way to be signed out. Send the person to the sign-in page instead.
+ *
+ * Guarded twice: the flag stops a screenful of parallel queries from each starting a
+ * navigation, and the path check stops the sign-in page itself from reloading forever
+ * when something there reads the API.
+ */
+let redirectingToSignIn = false;
+
+function onUnauthenticated() {
+  if (redirectingToSignIn) return;
+  if (window.location.pathname === "/signin") return;
+  redirectingToSignIn = true;
+  window.location.assign("/signin");
+}
+
+async function failure(res: Response): Promise<ApiError> {
+  const body = (await res.json().catch(() => null)) as
+    | { error?: { code?: string; message?: string } }
+    | null;
+  if (res.status === 401) onUnauthenticated();
+  return new ApiError(
+    body?.error?.code ?? "http_error",
+    // The server's message is written for a person to read, so it goes straight
+    // through rather than being replaced with a generic string.
+    body?.error?.message ?? `Request failed (${res.status})`,
+    res.status,
+  );
+}
+
 async function get<T>(path: string, params: Params = {}, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${BASE}/api${path}${query(params)}`, { signal });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as
-      | { error?: { code?: string; message?: string } }
-      | null;
-    throw new ApiError(
-      body?.error?.code ?? "http_error",
-      // The server's message is written for a person to read, so it goes straight
-      // through rather than being replaced with a generic string.
-      body?.error?.message ?? `Request failed (${res.status})`,
-      res.status,
-    );
-  }
+  if (!res.ok) throw await failure(res);
+  return (await res.json()) as T;
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}/api${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await failure(res);
   return (await res.json()) as T;
 }
 
@@ -100,6 +132,11 @@ export const api = {
 
   vehicles: (params: { bbox: string; modes?: string }, signal?: AbortSignal) =>
     get<VehiclesResponse>("/vehicles", params, signal),
+
+  me: (signal?: AbortSignal) => get<MeResponse>("/me", {}, signal),
+
+  createInvite: (body: { email: string; name?: string }) =>
+    post<InviteResponse>("/invites", body),
 };
 
 /** Stream URLs, for the SSE hook. */

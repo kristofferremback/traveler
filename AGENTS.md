@@ -49,9 +49,13 @@ and falls through to a live lookup rather than defaulting to 0, 0.
 
 ## Nothing writable without an owner
 
-A deployed instance is reachable by anyone who has the URL, and there is no
-authentication. Every route is therefore a read, apart from the admin sync endpoint,
-which only exists when `ADMIN_TOKEN` is set.
+A deployed instance is reachable by anyone who has the URL, so every route under
+`/api` sits behind `apiGate` in `server/src/auth/middleware.ts`: a session cookie or an
+`x-api-key` header, with only `/api/health`, `/api/ready` and the auth endpoints
+themselves let through. Accounts exist by invitation only.
+
+Being signed in is not the same as owning a row. `c.get("user")` is who is asking, and
+a write path has to say what it does with that.
 
 An earlier version of this shipped `/api/saved` with unauthenticated GET, POST and
 DELETE for personal places, built before any screen used it. On a public deployment
