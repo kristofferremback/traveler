@@ -8,6 +8,9 @@ import { DisruptionsPage } from "./routes/DisruptionsPage";
 import { SignInPage } from "./routes/SignInPage";
 import { WelcomePage } from "./routes/WelcomePage";
 import { SettingsPage } from "./routes/SettingsPage";
+import { PlacesPage } from "./routes/PlacesPage";
+import { NewPlacePage } from "./routes/NewPlacePage";
+import { PlacePage } from "./routes/PlacePage";
 import { Button } from "./components/ui/button";
 import { useSession } from "./lib/auth";
 import { cn } from "./lib/utils";
@@ -123,6 +126,9 @@ export function App() {
           <Route path="/nearby" element={<NearbyPage />} />
           <Route path="/disruptions" element={<DisruptionsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/places" element={<PlacesPage />} />
+          <Route path="/places/new" element={<NewPlacePage />} />
+          <Route path="/places/:id" element={<PlacePage />} />
           <Route path="/signin" element={<SignInPage />} />
           <Route path="/welcome" element={<WelcomePage />} />
           <Route

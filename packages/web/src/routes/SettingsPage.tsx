@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useId, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
+import type { CommuteSettings } from "@traveler/shared";
+import { ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { authClient, authErrorMessage, deviceLabel } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -77,6 +79,119 @@ function InviteQr({ url }: { url: string }) {
       height={240}
       className="rounded-lg bg-white p-2"
     />
+  );
+}
+
+/**
+ * The five walking settings, as numbers with units in their labels.
+ *
+ * Sliders would need a value readout anyway and are hard to hit precisely while
+ * walking; a number input keeps the keyboard's own stepper and reads back exactly what
+ * is stored. The bounds match the schema's, so the server never has to reject one of
+ * these for being out of range.
+ */
+const WALK_FIELDS = [
+  { key: "speedKmh", label: "Gånghastighet (km/h)", step: 0.5, min: 2, max: 10 },
+  { key: "maxWalkMinutes", label: "Längsta promenad (min)", step: 1, min: 1, max: 45 },
+  { key: "transferPenaltyMinutes", label: "Straff per byte (min)", step: 1, min: 0, max: 60 },
+  { key: "walkMultiplier", label: "Vikt för gångtid", step: 0.1, min: 0, max: 5 },
+  { key: "catchBufferMinutes", label: "Marginal till avgång (min)", step: 0.5, min: 0, max: 15 },
+] as const satisfies readonly {
+  key: keyof CommuteSettings;
+  label: string;
+  step: number;
+  min: number;
+  max: number;
+}[];
+
+function WalkSettingsCard() {
+  const queryClient = useQueryClient();
+  const fieldId = useId();
+  const query = useQuery({
+    queryKey: ["settings"],
+    queryFn: ({ signal }) => api.settings.get(signal),
+  });
+  const current = query.data?.settings;
+
+  // Drafts exist so a half-typed "1" in the speed field is not sent as 1 km/h. The
+  // server's answer replaces them, so what is on screen is always what is stored.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!current) return;
+    setDrafts(Object.fromEntries(WALK_FIELDS.map((f) => [f.key, String(current[f.key])])));
+  }, [current]);
+
+  const save = useMutation({
+    mutationFn: (patch: Partial<CommuteSettings>) => api.settings.put(patch),
+    onSuccess: (data) => queryClient.setQueryData(["settings"], data),
+  });
+
+  function commit(key: keyof CommuteSettings) {
+    if (!current) return;
+    const value = Number(drafts[key]);
+    if (!Number.isFinite(value) || value === current[key]) return;
+    save.mutate({ [key]: value });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Promenad</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-[var(--color-muted)]">
+          Hur du går avgör vilka hållplatser som räknas som dina och vilka resor som
+          rankas högst. Ändringarna sparas när du lämnar fältet.
+        </p>
+
+        {query.isPending ? <Skeleton className="h-32 w-full" /> : null}
+
+        {current ? (
+          <form
+            className="grid gap-3 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              for (const field of WALK_FIELDS) commit(field.key);
+            }}
+          >
+            {WALK_FIELDS.map((field) => (
+              <div key={field.key}>
+                <label
+                  htmlFor={`${fieldId}-${field.key}`}
+                  className="mb-1 block text-xs font-medium text-[var(--color-muted)]"
+                >
+                  {field.label}
+                </label>
+                <Input
+                  id={`${fieldId}-${field.key}`}
+                  type="number"
+                  inputMode="decimal"
+                  step={field.step}
+                  min={field.min}
+                  max={field.max}
+                  value={drafts[field.key] ?? ""}
+                  onChange={(e) =>
+                    setDrafts((d) => ({ ...d, [field.key]: e.target.value }))
+                  }
+                  onBlur={() => commit(field.key)}
+                />
+              </div>
+            ))}
+            {/* Submit exists for the keyboard: Enter in a number field should save the
+                field it is in rather than doing nothing. */}
+            <button type="submit" className="sr-only">
+              Spara promenadinställningar
+            </button>
+          </form>
+        ) : null}
+
+        {save.isError ? (
+          <p role="alert" className="text-sm text-[var(--color-danger)]">
+            {save.error.message}
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -169,6 +284,20 @@ export function SettingsPage() {
           {error}
         </p>
       ) : null}
+
+      <Card>
+        <CardContent className="p-0">
+          <Link
+            to="/places"
+            className="flex min-h-14 items-center justify-between gap-2 p-4"
+          >
+            <span className="text-sm font-semibold">Platser</span>
+            <ChevronRight className="size-4 text-[var(--color-muted)]" aria-hidden />
+          </Link>
+        </CardContent>
+      </Card>
+
+      <WalkSettingsCard />
 
       <Card>
         <CardHeader>
