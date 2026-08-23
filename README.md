@@ -209,6 +209,13 @@ The server binds to `127.0.0.1` unless `HOST` says otherwise, so nothing reaches
 except through the proxy. `tailscale serve` is tailnet-only; `tailscale funnel` would
 put it on the public internet, which this app is not built for.
 
+The script runs the server in production mode with `AUTH_BASE_URL` set to the tailnet
+address (passkeys register against it, invite links are built from it) and generates an
+`AUTH_SECRET` into the repo-root `.env` the first time. Mint the first account from
+another shell: `AUTH_BASE_URL=https://<machine>.<tailnet>.ts.net:8443 bun run invite you@example.com`,
+open the link on the phone, add a passkey. A passkey made here will not be offered on a
+different hostname later; that is a new invite, not a bug.
+
 ## Maps
 
 MapLibre, and no map key anywhere. `GET /api/map/style.json?theme=dark|light` answers
@@ -255,10 +262,26 @@ index is built, and names what is missing. Anything that needs the catalog to ac
 work should wait on this. Waiting on `/api/health` instead gets you a server that
 returns `{"places": []}` for every search and no error.
 
-Railway, one service, Dockerfile build. Mount a volume and set `DATABASE_PATH` to a path
-on it, for example `/data/traveler.db`. On first boot the catalog is empty, so the
-server starts a sync in the background and answers health checks while it runs. It takes
-about five seconds.
+Railway, one service, one volume, defined in `.railway/railway.ts` (Railway's
+infrastructure-as-code; `railway.json`/`railway.toml` are deprecated by Railway until
+December 2026). The file names the Dockerfile build, the `/api/health` healthcheck, the
+restart policy, the `/data` volume and the variables; secrets are `preserve()`d and live
+only in Railway.
+
+1. `railway login`, then in the repo: `railway link` to the project (or `railway init`
+   for a new one) and `railway config plan` to see what differs from the file.
+2. `railway config apply` creates or updates the service and volume to match.
+3. Set the secrets once: `railway variable set AUTH_SECRET=$(openssl rand -base64 32)`
+   and `AUTH_BASE_URL=https://<your domain>`. Optional: `ADMIN_TOKEN`, `TRAFIKLAB_GTFS_RT_KEY`.
+4. Put the final domain on the service before the first invite is followed there.
+   Passkeys are registered against `AUTH_BASE_URL`'s hostname; changing it later means a
+   new invite and a new passkey for each person.
+5. Mint the first invite from the Railway shell: `railway ssh -- bun run invite you@example.com`.
+
+The image sets `HOST=0.0.0.0`: the server binds loopback by default, which is right on a
+laptop and wrong in a container, where Railway's proxy reaches it over the container
+interface. On first boot the catalog is empty, so the server starts a sync in the
+background and answers health checks while it runs. It takes about twenty seconds.
 
 The catalog re-syncs every 24 hours, and also on boot if the last successful sync is
 older than that, since a service that redeploys daily would otherwise never reach a
