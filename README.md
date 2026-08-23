@@ -209,6 +209,13 @@ The server binds to `127.0.0.1` unless `HOST` says otherwise, so nothing reaches
 except through the proxy. `tailscale serve` is tailnet-only; `tailscale funnel` would
 put it on the public internet, which this app is not built for.
 
+The script runs the server in production mode with `AUTH_BASE_URL` set to the tailnet
+address (passkeys register against it, invite links are built from it) and generates an
+`AUTH_SECRET` into the repo-root `.env` the first time. Mint the first account from
+another shell: `AUTH_BASE_URL=https://<machine>.<tailnet>.ts.net:8443 bun run invite you@example.com`,
+open the link on the phone, add a passkey. A passkey made here will not be offered on a
+different hostname later; that is a new invite, not a bug.
+
 ## Maps
 
 MapLibre, and no map key anywhere. `GET /api/map/style.json?theme=dark|light` answers
