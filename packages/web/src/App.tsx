@@ -1,17 +1,22 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
-import { AlertTriangle, MapPin, Search, TriangleAlert } from "lucide-react";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { AlertTriangle, MapPin, Search, Settings, TriangleAlert } from "lucide-react";
 import { PlanPage } from "./routes/PlanPage";
 import { StopPage } from "./routes/StopPage";
 import { NearbyPage } from "./routes/NearbyPage";
 import { DisruptionsPage } from "./routes/DisruptionsPage";
+import { SignInPage } from "./routes/SignInPage";
+import { WelcomePage } from "./routes/WelcomePage";
+import { SettingsPage } from "./routes/SettingsPage";
 import { Button } from "./components/ui/button";
+import { useSession } from "./lib/auth";
 import { cn } from "./lib/utils";
 
 const TABS = [
   { to: "/", label: "Res", icon: Search, end: true },
   { to: "/nearby", label: "Nära", icon: MapPin, end: false },
   { to: "/disruptions", label: "Trafikläget", icon: TriangleAlert, end: false },
+  { to: "/settings", label: "Mer", icon: Settings, end: false },
 ];
 
 function TabBar() {
@@ -76,7 +81,39 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
+/** Routes that make sense without an account. Everything else needs one. */
+const PUBLIC_ROUTES = new Set(["/signin", "/welcome"]);
+
 export function App() {
+  const { data: session, isPending } = useSession();
+  const location = useLocation();
+  const isPublic = PUBLIC_ROUTES.has(location.pathname);
+
+  /**
+   * Nothing is rendered until the session is known.
+   *
+   * Rendering the app first and redirecting on the answer shows a flash of the plan form
+   * to someone who is signed out, and rendering the sign-in page first flashes it at
+   * someone who is signed in. Both look like a bug, so neither is shown until the
+   * question is settled.
+   */
+  if (isPending) {
+    return (
+      <div
+        className="flex min-h-dvh items-center justify-center"
+        role="status"
+        aria-label="Laddar"
+      />
+    );
+  }
+
+  if (!session && !isPublic) {
+    return <Navigate to="/signin" replace />;
+  }
+  if (session && location.pathname === "/signin") {
+    return <Navigate to="/" replace />;
+  }
+
   return (
     <ErrorBoundary>
       <main className="min-h-dvh">
@@ -85,6 +122,9 @@ export function App() {
           <Route path="/stop/:siteId" element={<StopPage />} />
           <Route path="/nearby" element={<NearbyPage />} />
           <Route path="/disruptions" element={<DisruptionsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/signin" element={<SignInPage />} />
+          <Route path="/welcome" element={<WelcomePage />} />
           <Route
             path="*"
             element={
@@ -95,7 +135,9 @@ export function App() {
           />
         </Routes>
       </main>
-      <TabBar />
+      {/* The sign-in and welcome pages are their own full screen; a tab bar there would
+          offer four places to go before there is anywhere to go. */}
+      {isPublic ? null : <TabBar />}
     </ErrorBoundary>
   );
 }
