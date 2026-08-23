@@ -105,6 +105,24 @@ about a day of one person watching a map. Silver is 2 000 000.
 which is the right default for a public URL: it is a ten-megabyte download and a
 rewrite of three tables.
 
+## Testing it on a phone
+
+```bash
+./run-tailscale.sh
+```
+
+Builds, starts the server on loopback, and exposes it to the tailnet over HTTPS at
+`https://<machine>.<tailnet>.ts.net:8443`. Ctrl-C stops both. It uses its own port, so
+an existing `tailscale serve` mapping on `/` is left alone.
+
+HTTPS matters more than it looks. Geolocation is a secure-context API, so over a plain
+`http://192.168.x.x:3000` the "use my position" control and the entire Nearby page fail,
+silently and only on the phone. Tailscale terminates TLS with a real certificate.
+
+The server binds to `127.0.0.1` unless `HOST` says otherwise, so nothing reaches it
+except through the proxy. `tailscale serve` is tailnet-only; `tailscale funnel` would
+put it on the public internet, which this app is not built for.
+
 ## Maps
 
 MapLibre with a Protomaps `.pmtiles` archive on the volume. No key, no tile server, and
