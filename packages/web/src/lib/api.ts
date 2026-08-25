@@ -145,7 +145,13 @@ export const api = {
    * the default carries only the recommended option's.
    */
   commute: (
-    params: { from: string; to: string; when?: string; paths?: "recommended" | "all" | "none" },
+    params: {
+      from: string;
+      to: string;
+      when?: string;
+      arriveBy?: "1";
+      paths?: "recommended" | "all" | "none";
+    },
     signal?: AbortSignal,
   ) => get<CommuteResponse>("/commute", params, signal),
 

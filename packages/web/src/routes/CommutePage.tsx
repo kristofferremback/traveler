@@ -7,6 +7,7 @@ import { BottomSheet, PEEK_HEIGHT } from "@/components/BottomSheet";
 import { CommuteList } from "@/components/CommuteList";
 import { PlaceChips } from "@/components/PlaceChips";
 import { PlacePicker } from "@/components/PlacePicker";
+import { TimePicker, TimePill, type PlanTime } from "@/components/TimePicker";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -27,11 +28,12 @@ const TICK_MS = 10_000;
 type PlaceRef = string;
 
 /**
- * The screen's whole state is two place refs in the URL.
+ * The screen's whole state is two place refs and an optional time in the URL.
  *
- * A ref is `me`, `place:<id>` for a saved place, or a plain place id. That makes a
- * commute a link -- "home from work" is a bookmark -- and it makes Back mean what it
- * looks like it means.
+ * A ref is `me`, `place:<id>` for a saved place, or a plain place id; the time is an
+ * ISO `when` with `arriveBy=1` when it is a deadline rather than a departure. That
+ * makes a commute a link -- "home by five" is a bookmark -- and it makes Back mean what
+ * it looks like it means.
  */
 export function CommutePage() {
   const [params, setParams] = useSearchParams();
@@ -53,6 +55,9 @@ export function CommutePage() {
   const fromRef: PlaceRef | null = params.get("from") ?? "me";
   const toRef: PlaceRef | null =
     params.get("to") ?? (saved[0] ? `place:${saved[0].id}` : null);
+
+  const when = params.get("when");
+  const time: PlanTime = when ? { when, arriveBy: params.get("arriveBy") === "1" } : null;
 
   const [position, setPosition] = useState<{ lat: number; lon: number } | null>(null);
   const [positionDenied, setPositionDenied] = useState(false);
@@ -92,10 +97,18 @@ export function CommutePage() {
   const paths = useRef<"recommended" | "all">("recommended");
 
   const commute = useQuery({
-    queryKey: ["commute", apiFrom, apiTo],
+    queryKey: ["commute", apiFrom, apiTo, time?.when ?? null, time?.arriveBy ?? false],
     enabled: Boolean(apiFrom && apiTo) && !sameEnds,
     queryFn: ({ signal }) =>
-      api.commute({ from: apiFrom!, to: apiTo!, paths: paths.current }, signal),
+      api.commute(
+        {
+          from: apiFrom!,
+          to: apiTo!,
+          ...(time ? { when: time.when, ...(time.arriveBy ? { arriveBy: "1" as const } : {}) } : {}),
+          paths: paths.current,
+        },
+        signal,
+      ),
     staleTime: 30_000,
     // Only while the screen is actually being looked at: a phone in a pocket does not
     // need a plan every minute, and SL does not need the traffic.
@@ -108,12 +121,12 @@ export function CommutePage() {
   const selected: CommuteOption | null =
     options.find((o) => o.id === selectedId) ?? options[0] ?? null;
 
-  // A new pair of places is a new list; keeping the old selection would draw a trip that
-  // is no longer on screen.
+  // A new pair of places or a new time is a new list; keeping the old selection would
+  // draw a trip that is no longer on screen.
   useEffect(() => {
     setSelectedId(null);
     paths.current = "recommended";
-  }, [apiFrom, apiTo]);
+  }, [apiFrom, apiTo, time?.when, time?.arriveBy]);
 
   const select = useCallback(
     (option: CommuteOption) => {
@@ -147,15 +160,18 @@ export function CommutePage() {
    * Choosing a place replaces that entry with the new trip: the picker never survives in
    * the history it opened from, and Back from the result goes to the trip before it.
    */
-  const picker = (location.state as { picker?: "from" | "to" } | null)?.picker ?? null;
-  const openPicker = (end: "from" | "to") =>
+  const picker =
+    (location.state as { picker?: "from" | "to" | "time" } | null)?.picker ?? null;
+  const openPicker = (end: "from" | "to" | "time") =>
     navigate({ pathname: location.pathname, search: location.search }, { state: { picker: end } });
   const closePicker = () => navigate(-1);
 
-  const setEnds = (next: { from: PlaceRef | null; to: PlaceRef | null }, fromPicker: boolean) => {
+  const setSearch = (
+    next: Partial<Record<"from" | "to" | "when" | "arriveBy", string | null>>,
+    fromPicker: boolean,
+  ) => {
     const search = new URLSearchParams(params);
-    for (const key of ["from", "to"] as const) {
-      const value = next[key];
+    for (const [key, value] of Object.entries(next)) {
       if (value) search.set(key, value);
       else search.delete(key);
     }
@@ -168,6 +184,11 @@ export function CommutePage() {
       setParams(search, { replace: true });
     }
   };
+
+  const setEnds = (next: { from: PlaceRef | null; to: PlaceRef | null }, fromPicker: boolean) =>
+    setSearch(next, fromPicker);
+  const setTime = (next: PlanTime) =>
+    setSearch({ when: next?.when ?? null, arriveBy: next?.arriveBy ? "1" : null }, true);
 
   const swap = () => setEnds({ from: toRef, to: fromRef }, false);
 
@@ -197,6 +218,9 @@ export function CommutePage() {
           onOpen={openPicker}
           onSwap={swap}
         />
+        <div className="mt-1.5 flex">
+          <TimePill time={time} onOpen={() => openPicker("time")} />
+        </div>
       </div>
 
       <BottomSheet label="Resor härifrån" onHeightChange={setSheetHeight}>
@@ -273,7 +297,9 @@ export function CommutePage() {
 
           {commute.isSuccess && options.length === 0 ? (
             <p className="py-2 text-sm">
-              Ingen resa de närmaste timmarna. Prova en annan plats eller planera resan.
+              {time?.arriveBy
+                ? "Ingen resa hinner fram i tid. Prova en senare tid eller en annan plats."
+                : "Ingen resa de närmaste timmarna. Prova en annan plats eller planera resan."}
             </p>
           ) : null}
 
@@ -285,7 +311,11 @@ export function CommutePage() {
         </div>
       </BottomSheet>
 
-      {picker ? (
+      {picker === "time" ? (
+        <TimePicker time={time} onPick={setTime} onClose={closePicker} />
+      ) : null}
+
+      {picker === "from" || picker === "to" ? (
         <PlacePicker
           end={picker}
           places={saved}

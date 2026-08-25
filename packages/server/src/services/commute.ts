@@ -41,7 +41,7 @@ const MAX_ENUMERATED_SITES = 12;
 const TRIPS_CACHE_SECONDS = 45;
 /** A boarding/alighting stop further than this from any neighbourhood stop point is not ours. */
 const MATCH_TOLERANCE_M = 250;
-/** Options that would have you leave more than this after the planned time are not "next". */
+/** How far from the planned time an option may leave and still be an answer, in either direction. */
 const HORIZON_MS = 3 * 60 * 60 * 1000;
 /** Crow-fly radius used only to decide which end is the quieter one. */
 const DENSITY_RADIUS_M = 1200;
@@ -240,11 +240,20 @@ function draft(journey: Journey, side: Side, stops: NeighbourStop[]): Draft | nu
   };
 }
 
-function scoreOf(d: Draft, settings: CommuteSettings, plannedFrom: number): number {
-  const arrival = (d.arriveAt - plannedFrom) / 1000;
+/** What the traveller asked about: the earliest they can leave, or the latest they may arrive. */
+export type Pivot = { at: number; arriveBy: boolean };
+
+/**
+ * Lower is better. Planning forwards, the cost is how long until you are there;
+ * planning backwards from a deadline, it is how long before the deadline you have to
+ * be out the door. Both in seconds, both carrying the same change and walk penalties,
+ * so the transfer rule reads the same in either direction.
+ */
+function scoreOf(d: Draft, settings: CommuteSettings, pivot: Pivot): number {
+  const time = pivot.arriveBy ? (pivot.at - d.leaveAt) / 1000 : (d.arriveAt - pivot.at) / 1000;
   const penalty = d.transfers * settings.transferPenaltyMinutes * 60;
   const walkWeight = (settings.walkMultiplier - 1) * (d.ourWalk + d.farWalk);
-  return arrival + penalty + walkWeight;
+  return time + penalty + walkWeight;
 }
 
 /**
@@ -255,7 +264,7 @@ export function foldDrafts(
   drafts: Draft[],
   side: Side,
   settings: CommuteSettings,
-  plannedFrom: number,
+  pivot: Pivot,
   now: number,
 ): CommuteOption[] {
   // Group the same ride boarded or left at different stops.
@@ -290,7 +299,7 @@ export function foldDrafts(
         walkSeconds: d.ourWalk,
       });
     }
-    folded.push({ main, alternatives, score: scoreOf(main, settings, plannedFrom) });
+    folded.push({ main, alternatives, score: scoreOf(main, settings, pivot) });
   }
 
   // A change that does not pay for itself against staying on the same first vehicle is
@@ -322,11 +331,20 @@ export function foldDrafts(
   }
 
   // "Missed" is relative to when the traveller said they would go, which is now unless
-  // they asked about a later time.
-  const reference = Math.max(plannedFrom, now);
+  // they asked about a later departure. A deadline says nothing about when they go, so
+  // there the clock is the only reference.
+  const reference = pivot.arriveBy ? now : Math.max(pivot.at, now);
   const buffer = settings.catchBufferMinutes * 60 * 1000;
+  // Forwards, an option is within reach if it leaves within the horizon. Backwards, it
+  // has to land by the deadline -- a trip that arrives after "home by 17:00" is not a
+  // worse answer to the question, it is no answer -- and leave within the horizon
+  // before it.
+  const withinReach = (d: Draft) =>
+    pivot.arriveBy
+      ? d.arriveAt <= pivot.at && d.leaveAt >= pivot.at - HORIZON_MS
+      : d.leaveAt <= pivot.at + HORIZON_MS;
   const options: CommuteOption[] = [...equivalent.values()]
-    .filter((f) => f.main.leaveAt <= plannedFrom + HORIZON_MS)
+    .filter((f) => withinReach(f.main))
     .map((f) => {
     const d = f.main;
     const status =
@@ -393,8 +411,12 @@ export async function planCommute(query: CommuteQuery, userId: string): Promise<
       throw new AppError("invalid_time", `Could not read "${query.when}" as a time.`, 400);
     }
   }
+  if (query.arriveBy && !when) {
+    throw new AppError("invalid_time", "arriveBy needs a `when` to arrive by.", 400);
+  }
   const now = Date.now();
   const plannedFrom = when ? when.getTime() : now;
+  const pivot: Pivot = { at: plannedFrom, arriveBy: query.arriveBy };
 
   const [from, to] = await Promise.all([
     resolveRef(query.from, userId),
@@ -425,21 +447,31 @@ export async function planCommute(query: CommuteQuery, userId: string): Promise<
 
   const results = await Promise.all(
     [...sites.entries()].map(async ([gid, stop]) => {
-      // Leaving from the enumerated end, you reach each stop at the planned time plus
-      // the walk, and that is the moment to ask SL about; asking about the planned time
-      // itself would list departures you cannot be at the stop for. Arriving at the
-      // enumerated end, the walk comes after the ride and SL's time is the planned one.
-      const askAt =
-        side === "origin" ? new Date(plannedFrom + stop.secondsTo * 1000) : when;
+      // The walk on our side is ours, not SL's, so the moment asked about is shifted by
+      // it. Leaving from the enumerated end, you reach each stop at the planned time
+      // plus the walk; asking about the planned time itself would list departures you
+      // cannot be at the stop for. Arriving at the enumerated end by a deadline, the
+      // ride has to be over a walk before it. In the other two cases the walk on our
+      // side comes on the far side of the ride from the pivot, and SL's time is the
+      // planned one.
+      const shifted = pivot.arriveBy ? side === "destination" : side === "origin";
+      const askAt = !shifted
+        ? when
+        : new Date(
+            pivot.arriveBy
+              ? plannedFrom - stop.secondsFrom * 1000
+              : plannedFrom + stop.secondsTo * 1000,
+          );
       const params = {
         from: side === "origin" ? { id: gid } : slEndpoint(far),
         to: side === "origin" ? slEndpoint(far) : { id: gid },
         when: askAt,
+        arriveBy: pivot.arriveBy,
         results: 3,
         walkPercent,
         maxWalkMinutes: settings.maxWalkMinutes,
       };
-      const whenKey = askAt ? askAt.toISOString().slice(0, 16) : "now";
+      const whenKey = askAt ? `${pivot.arriveBy ? "arr" : "dep"}:${askAt.toISOString().slice(0, 16)}` : "now";
       const key = `commute:${JSON.stringify(params.from)}>${JSON.stringify(params.to)}:${whenKey}:${walkPercent}:${settings.maxWalkMinutes}`;
       try {
         return await cached(key, TRIPS_CACHE_SECONDS, () => trips(params));
@@ -473,9 +505,10 @@ export async function planCommute(query: CommuteQuery, userId: string): Promise<
     fromLabel: from.label,
     toLabel: to.label,
     enumerated: side,
-    options: withPaths(foldDrafts(drafts, side, settings, plannedFrom, now), query.paths),
+    options: withPaths(foldDrafts(drafts, side, settings, pivot, now), query.paths),
     settings,
     plannedFrom: new Date(plannedFrom).toISOString(),
+    arriveBy: pivot.arriveBy,
     fetchedAt: new Date().toISOString(),
     notices: [...notices],
   };

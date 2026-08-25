@@ -134,8 +134,17 @@ export const PlaceRef = z.string().trim().min(1).max(400);
 export const CommuteQuery = CommuteSettingsOverrides.extend({
   from: PlaceRef,
   to: PlaceRef,
-  /** ISO instant to plan from. Absent means now. */
+  /** ISO instant to plan around. Absent means now. */
   when: z.string().optional(),
+  /**
+   * Read `when` as the latest arrival instead of the earliest departure. Options are
+   * then ranked by how late you can leave and still be there, and anything landing
+   * after `when` is left out. Needs `when`.
+   */
+  arriveBy: z
+    .enum(["true", "false", "1", "0"])
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
   /**
    * How much drawn geometry to send back.
    *
@@ -213,7 +222,9 @@ export const CommuteResponse = z.object({
   /** Sorted best first; missed options last. */
   options: z.array(CommuteOption),
   settings: CommuteSettings,
+  /** The instant planned around: the earliest departure, or the deadline when `arriveBy`. */
   plannedFrom: Instant,
+  arriveBy: z.boolean().default(false),
   fetchedAt: Instant,
   notices: z.array(z.string()).default([]),
 });

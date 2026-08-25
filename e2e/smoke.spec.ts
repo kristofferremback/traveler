@@ -213,6 +213,32 @@ test.describe("departures", () => {
   });
 });
 
+/** Tomorrow at a Stockholm wall-clock time, as an instant. */
+function tomorrowAt(hour: number, minute: number): string {
+  const local = localTomorrowAt(hour, minute);
+  const offset = stockholmOffsetMinutes(new Date(`${local}:00Z`));
+  return new Date(Date.parse(`${local}:00Z`) - offset * 60_000).toISOString();
+}
+
+/** Tomorrow's date in Stockholm plus a time, in `datetime-local` shape. */
+function localTomorrowAt(hour: number, minute: number): string {
+  const day = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(
+    new Date(Date.now() + 86_400_000),
+  );
+  return `${day}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function stockholmOffsetMinutes(at: Date): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Stockholm",
+    hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).formatToParts(at);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  const wall = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"));
+  return Math.round((wall - at.getTime()) / 60_000);
+}
+
 test.describe("commute engine", () => {
   // Jarlaberg, Nacka. The walking neighbourhood is computed live against Valhalla on
   // first use, so the first of these is the slow one.
@@ -256,6 +282,37 @@ test.describe("commute engine", () => {
     // Missed options, if any, sort after live ones.
     const firstMissed = statuses.indexOf("missed");
     if (firstMissed !== -1) expect(statuses.slice(firstMissed).every((s: string) => s === "missed")).toBe(true);
+  });
+
+  test("home by a deadline tomorrow: nothing lands late, and the latest leave is recommended", async ({ request }) => {
+    test.setTimeout(90_000);
+    const deadline = tomorrowAt(17, 0);
+    const res = await request.get(
+      `/api/commute?from=9091001000009192&to=${home}&when=${encodeURIComponent(deadline)}&arriveBy=1`,
+    );
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.arriveBy).toBe(true);
+    expect(body.plannedFrom).toBe(deadline);
+    expect(body.options.length).toBeGreaterThan(1);
+    const live = body.options.filter((o: { status: string }) => o.status !== "missed");
+    expect(live.map((o: { status: string }) => o.status)).not.toContain("missed");
+    for (const o of body.options) {
+      expect(new Date(o.arriveAt).getTime()).toBeLessThanOrEqual(new Date(deadline).getTime());
+    }
+    // The recommendation is the one you can leave latest for, penalties aside: no
+    // direct ride in the list leaves after it.
+    const best = body.options[0];
+    expect(best.status).toBe("recommended");
+    for (const o of body.options.filter((o: { transfers: number }) => o.transfers <= best.transfers)) {
+      expect(new Date(o.leaveAt).getTime()).toBeLessThanOrEqual(new Date(best.leaveAt).getTime());
+    }
+  });
+
+  test("arriveBy without a time is a 400", async ({ request }) => {
+    const res = await request.get(`/api/commute?from=9091001000009192&to=${home}&arriveBy=1`);
+    expect(res.status()).toBe(400);
+    expect((await res.json()).error.code).toBe("invalid_time");
   });
 
   test("a mistyped place id is a 404, not a fuzzy match in Norrtälje", async ({ request }) => {
@@ -481,6 +538,38 @@ test.describe("the commute screen", () => {
     await page.getByRole("button", { name: /^Från/ }).click();
     await page.getByRole("dialog").getByRole("button", { name: /Hem/ }).click();
     await expect(page).toHaveURL(new RegExp(`from=place%3A${homeId}`));
+  });
+
+  test("plans around a chosen time, keeps it in the URL, and Nu clears it", async ({ page }) => {
+    await page.goto(trip);
+    const pill = page.getByRole("button", { name: /^Nu$|^Avgång|^Framme senast/ });
+    await expect(pill).toHaveText("Nu");
+
+    await pill.click();
+    const picker = page.getByRole("dialog", { name: "Välj tid" });
+    await expect(picker).toBeVisible();
+    await picker.getByRole("button", { name: "Framme senast" }).click();
+    await picker.getByLabel("Senast framme").fill(localTomorrowAt(17, 0));
+    await picker.getByRole("button", { name: "Klar" }).click();
+
+    await expect(page).toHaveURL(/arriveBy=1/);
+    await expect(page).toHaveURL(/when=/);
+    await expect(pill).toHaveText("Framme senast imorgon 17:00");
+
+    // Every row answers the question asked: on the ground before five.
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+    const arrivals = await rows(page).locator("text=/Framme \\d{2}:\\d{2}/").allInnerTexts();
+    expect(arrivals.length).toBeGreaterThan(0);
+    for (const text of arrivals) {
+      const [h, m] = text.replace("Framme ", "").split(":").map(Number);
+      expect(h! * 60 + m!).toBeLessThanOrEqual(17 * 60);
+    }
+
+    // Nu is the way back to the ordinary screen, and the URL forgets the time with it.
+    await pill.click();
+    await picker.getByRole("button", { name: "Nu" }).click();
+    await expect(page).toHaveURL(/^(?!.*when=).*$/);
+    await expect(pill).toHaveText("Nu");
   });
 
   test("survives an API outage without a white screen", async ({ page }) => {
