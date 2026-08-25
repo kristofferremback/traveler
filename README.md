@@ -13,7 +13,9 @@ bun run sync      # pull SL's stop catalog into SQLite, about 20 seconds
 bun run dev       # API on :3000, Vite on :5173
 ```
 
-Open http://localhost:5173. The Vite server proxies `/api` to the Bun server.
+Open http://localhost:5173. The Vite server proxies `/api` to the Bun server. Put
+`AUTH_BASE_URL=http://localhost:5173` in `.env` for this mode, so that invite links
+and sign-in redirects land on the origin that serves the pages.
 
 For a single-origin run, the way it is deployed:
 

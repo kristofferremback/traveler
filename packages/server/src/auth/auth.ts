@@ -36,6 +36,14 @@ export const auth = betterAuth({
   // A month, refreshed at most once a day. This is a phone in a pocket, not a bank.
   session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24 },
 
+  /**
+   * An account created by an invite link and a later Google sign-in with the same
+   * address are one person. Spelled out rather than left to the library's default for
+   * providers it happens to trust, because a spent invite link cannot be reissued to
+   * someone stuck at "this address already has an account".
+   */
+  account: { accountLinking: { enabled: true, trustedProviders: ["google"] } },
+
   socialProviders:
     env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
       ? {
@@ -51,8 +59,8 @@ export const auth = betterAuth({
 
   /**
    * The gate on account creation, and so on Google sign-in: an address with no live
-   * invite gets no account. Google is a trusted provider, so an account created by an
-   * invite link is linked to the same person's Google sign-in by address.
+   * invite gets no account. Linking (above) is what lets an account created by an
+   * invite link sign in with Google afterwards.
    */
   databaseHooks: {
     user: {
