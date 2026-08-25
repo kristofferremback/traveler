@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
-import { followInvite, mintInvite, signInContext, signInRequest, uniqueEmail } from "./auth";
+import { followInvite, mintInvite, signInContext, signInRequest, uniqueEmail, verifyUrlOf } from "./auth";
 
 /**
  * These drive the real app in a real browser against live SL data, because the failures
@@ -653,10 +653,29 @@ test.describe("sign-in and the gate", () => {
     const second = await browser.newContext();
     const page = await second.newPage();
     await page.goto(url);
+    await page.getByRole("button", { name: "Fortsätt" }).click();
     await expect(page.getByText("Länken har redan använts eller gått ut. Be om en ny.")).toBeVisible();
     // Shown the message and not signed in, which is the part that matters.
     expect((await page.request.get("/api/me")).status()).toBe(401);
     await second.close();
+  });
+
+  test("survives being fetched before it is accepted", async ({ browser, playwright, baseURL }) => {
+    // Chat apps and mail clients fetch every link they show to build a preview. A link
+    // that is spent by that fetch never reaches the person it was for. One-time means
+    // accepted once, not fetched once.
+    const url = mintInvite(uniqueEmail());
+    const previewer = await playwright.request.newContext({ baseURL });
+    for (let i = 0; i < 3; i += 1) {
+      const res = await previewer.get(url);
+      expect(res.status()).toBe(200);
+      expect(res.headers()["set-cookie"] ?? "").not.toContain("session_token");
+    }
+    await previewer.dispose();
+
+    const context = await browser.newContext();
+    await followInvite(await context.newPage(), url);
+    await context.close();
   });
 
   test("does not serve the public magic-link or email sign-up endpoints", async ({
@@ -690,7 +709,7 @@ test.describe("sign-in and the gate", () => {
     expect(before.invites.map((i) => i.url)).toContain(url);
 
     const invited = await playwright.request.newContext({ baseURL });
-    expect((await invited.get(url, { maxRedirects: 0 })).status()).toBe(302);
+    expect((await invited.get(verifyUrlOf(url), { maxRedirects: 0 })).status()).toBe(302);
     await invited.dispose();
 
     const after = (await (await request.get("/api/invites")).json()) as { invites: { url: string }[] };
@@ -766,7 +785,7 @@ test.describe("sign-in and the gate", () => {
     await expect(page.getByRole("img", { name: /QR-kod/ })).toBeVisible();
 
     const url = await link.inputValue();
-    expect(url).toContain("/api/auth/magic-link/verify?token=");
+    expect(url).toContain("/invite#token=");
 
     // The link is the product of this screen, so it has to work somewhere else.
     const invited = await browser.newContext();

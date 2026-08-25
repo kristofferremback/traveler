@@ -35,10 +35,11 @@ first invite is minted on the server:
 bun run invite you@example.com "Your name"
 ```
 
-It prints one line, the link. Opening it signs you in, creates the account, and offers
-to add a passkey; from then on "Logga in med passkey" is the whole sign-in. The link
-works once and for seven days, and nothing is emailed anywhere -- passing it on is your
-job. Later invites are easier to make from **Mer -> Bjud in**, which shows the link and
+It prints one line, the link. Opening it shows a single "Fortsätt" button; pressing it
+signs you in, creates the account, and offers to add a passkey; from then on "Logga in
+med passkey" is the whole sign-in. The link works once and for seven days, and nothing
+is emailed anywhere -- passing it on is your job. It is safe to paste into a chat: the
+token sits in the URL fragment, so the link previews chat apps fetch cannot spend it. Later invites are easier to make from **Mer -> Bjud in**, which shows the link and
 a QR code for the phone across the table.
 
 Passkeys need a secure context. `http://localhost` counts, so development is fine, but
