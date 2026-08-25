@@ -49,7 +49,7 @@ export function createApp(): Hono {
   });
 
   /**
-   * Sign-in, passkeys and API keys, handled by Better Auth.
+   * Sign-in, Google, invite links and API keys, handled by Better Auth.
    *
    * Mounted before the gate: these are how a caller gets a session, so requiring one here
    * would lock everybody out. `apiGate` skips /api/auth/* for the same reason.

@@ -17,3 +17,15 @@ describe("invite links", () => {
     expect(() => inviteUrl(`${env.AUTH_BASE_URL}/api/auth/magic-link/verify`)).toThrow();
   });
 });
+
+describe("the allow-list", () => {
+  test("knows an invited address, whatever its case, and nobody else", async () => {
+    const { createInvite, isInvited } = await import("../invites.ts");
+    const email = `unit+${Date.now()}@example.com`;
+    expect(isInvited(email)).toBe(false);
+    await createInvite({ email });
+    expect(isInvited(email)).toBe(true);
+    expect(isInvited(email.toUpperCase())).toBe(true);
+    expect(isInvited(`other-${email}`)).toBe(false);
+  });
+});

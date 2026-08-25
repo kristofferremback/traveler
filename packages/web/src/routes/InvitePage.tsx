@@ -27,14 +27,14 @@ export function InvitePage() {
 
   // A real navigation rather than a fetch: the verify endpoint answers with a redirect
   // and a session cookie, which the browser handles for us this way.
-  const verifyUrl = `/api/auth/magic-link/verify?token=${encodeURIComponent(token)}&callbackURL=${encodeURIComponent("/welcome")}`;
+  const verifyUrl = `/api/auth/magic-link/verify?token=${encodeURIComponent(token)}&callbackURL=${encodeURIComponent("/signin")}`;
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-6 py-12">
       <header className="space-y-3">
         <h1 className="text-2xl font-semibold">Du är inbjuden</h1>
         <p className="text-sm text-[var(--color-muted)]">
-          Länken loggar in dig en gång. Lägg sedan till en passkey så slipper du länkar.
+          Länken loggar in dig en gång. Nästa gång räcker det med Google och samma adress.
         </p>
       </header>
       <Button size="lg" className="w-full" onClick={() => window.location.assign(verifyUrl)}>

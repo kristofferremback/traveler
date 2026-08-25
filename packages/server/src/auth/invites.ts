@@ -56,9 +56,10 @@ export interface Invite {
 /**
  * Mint an invite link for an address.
  *
- * Following it signs the person in, creating the account on first use, and lands them on
- * /welcome to add a passkey. The link works once: Better Auth deletes the verification
- * row it consumes, so a forwarded link is already spent.
+ * Following it signs the person in, creating the account on first use. The link works
+ * once: Better Auth deletes the verification row it consumes, so a forwarded link is
+ * already spent. The invite row itself outlives the link: it is what lets the same
+ * address sign in with Google.
  */
 export async function createInvite(input: {
   email: string;
@@ -73,7 +74,9 @@ export async function createInvite(input: {
         // Better Auth needs a name for the account it may create; the address will do
         // until the person changes it.
         name: input.name?.trim() || input.email,
-        callbackURL: "/welcome",
+        // The app sends a signed-in visitor of /signin to the home screen; a spent link
+        // arrives there with ?error=, which the sign-in page explains.
+        callbackURL: "/signin",
       },
       headers: new Headers(),
     });
@@ -106,6 +109,20 @@ export async function createInvite(input: {
   // A failed invite must not wedge the queue for every later one.
   queue = run.catch(() => undefined);
   return run;
+}
+
+const invitedQuery = db.query<{ n: number }, { email: string; now: string }>(
+  `SELECT COUNT(*) AS n FROM invites
+    WHERE lower(email) = lower($email) AND expires_at > $now`,
+);
+
+/**
+ * Whether an address may get an account: someone minted it an invite in the last week.
+ * Checked once, when the account is created; after that the account itself is the
+ * permission. Compared case-insensitively, since Google and people differ on that.
+ */
+export function isInvited(email: string): boolean {
+  return (invitedQuery.get({ email, now: new Date().toISOString() })?.n ?? 0) > 0;
 }
 
 export interface InviteRow {

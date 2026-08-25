@@ -42,7 +42,7 @@ export function mintInvite(email: string): string {
 export function verifyUrlOf(inviteUrl: string): string {
   const token = new URLSearchParams(new URL(inviteUrl).hash.slice(1)).get("token");
   expect(token).toBeTruthy();
-  return `${E2E_BASE}/api/auth/magic-link/verify?token=${encodeURIComponent(token!)}&callbackURL=%2Fwelcome`;
+  return `${E2E_BASE}/api/auth/magic-link/verify?token=${encodeURIComponent(token!)}&callbackURL=%2Fsignin`;
 }
 
 let counter = 0;
@@ -83,5 +83,5 @@ export async function signInContext(
 export async function followInvite(page: Page, url: string): Promise<void> {
   await page.goto(url);
   await page.getByRole("button", { name: "Fortsätt" }).click();
-  await expect(page).toHaveURL(/\/welcome/);
+  await expect(page).toHaveURL(/\/$/);
 }

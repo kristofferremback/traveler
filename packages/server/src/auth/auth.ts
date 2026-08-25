@@ -1,18 +1,18 @@
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { magicLink } from "better-auth/plugins";
-import { passkey } from "@better-auth/passkey";
 import { apiKey } from "@better-auth/api-key";
 import { env } from "../env.ts";
 import { db } from "../db/index.ts";
-import { recordInvite } from "./invites.ts";
+import { isInvited, recordInvite } from "./invites.ts";
 
 /**
  * Who is allowed to use this instance.
  *
- * There are exactly two ways in. An invite link, minted by someone already inside or by
- * the CLI on the server, signs you in once. A passkey, added after that first sign-in,
- * signs you in every time after. No passwords, no email delivery, no third party -- a
- * deployment of this size should not carry an account recovery flow it cannot test.
+ * An invite is the allow-list. Someone already inside, or the CLI on the server, mints
+ * one for an address; from then on that address can sign in with Google, or once with
+ * the invite link itself. Google sign-in for an address nobody invited is refused before
+ * an account exists. No passwords, no email delivery.
  *
  * The schema lives in migration 7 of db/migrations.ts rather than being applied by
  * better-auth's own migrator: this database has one migration ladder and two writers
@@ -36,17 +36,40 @@ export const auth = betterAuth({
   // A month, refreshed at most once a day. This is a phone in a pocket, not a bank.
   session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24 },
 
+  socialProviders:
+    env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+      ? {
+          google: {
+            clientId: env.GOOGLE_CLIENT_ID,
+            clientSecret: env.GOOGLE_CLIENT_SECRET,
+            // Google's "choose an account" screen every time, so a shared laptop does
+            // not silently sign in as whoever used it last.
+            prompt: "select_account",
+          },
+        }
+      : {},
+
+  /**
+   * The gate on account creation, and so on Google sign-in: an address with no live
+   * invite gets no account. Google is a trusted provider, so an account created by an
+   * invite link is linked to the same person's Google sign-in by address.
+   */
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => {
+          if (!isInvited(user.email)) {
+            throw new APIError("FORBIDDEN", {
+              code: "NOT_INVITED",
+              message: "Ingen inbjudan finns för den här adressen.",
+            });
+          }
+        },
+      },
+    },
+  },
+
   plugins: [
-    /**
-     * A passkey is bound to the relying party id, which is a hostname. Reaching the same
-     * instance on a different host means a passkey that silently does not match, so this
-     * is derived from AUTH_BASE_URL rather than from the request.
-     */
-    passkey({
-      rpID: new URL(env.AUTH_BASE_URL).hostname,
-      rpName: "Traveler",
-      origin: env.AUTH_BASE_URL,
-    }),
     /**
      * "Sending" an invite means handing the link back to whoever asked for it, to pass
      * on however they like. Nothing here talks to a mail server.

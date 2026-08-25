@@ -1,6 +1,11 @@
 import { Hono } from "hono";
-import type { CatalogStatus, HealthResponse, ReadyResponse } from "@traveler/shared";
-import { env, VERSION } from "../env.ts";
+import type {
+  CatalogStatus,
+  HealthResponse,
+  ReadyResponse,
+  SignInMethodsResponse,
+} from "@traveler/shared";
+import { env, googleSignIn, VERSION } from "../env.ts";
 import { catalogCounts, searchIndexSize } from "../db/catalog.ts";
 import { lastSync } from "../sync/catalog.ts";
 import { isSyncRunning, runSyncOnce } from "../sync/scheduler.ts";
@@ -25,6 +30,12 @@ function catalogStatus(): CatalogStatus {
     syncRunning: isSyncRunning(),
   };
 }
+
+/** Public: the sign-in page has no session yet and needs to know what to offer. */
+health.get("/sign-in-methods", (c) => {
+  const body: SignInMethodsResponse = { google: googleSignIn };
+  return c.json(body);
+});
 
 health.get("/health", (c) => {
   const body: HealthResponse = {

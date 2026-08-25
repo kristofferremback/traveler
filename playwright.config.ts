@@ -49,9 +49,14 @@ export default defineConfig({
       LOG_LEVEL: "warn",
       // The suite signs itself in, so it needs the same auth configuration the invite
       // CLI uses. AUTH_BASE_URL has to name the port the browser reaches, because it is
-      // the passkey relying party and the base of every invite link the CLI prints.
+      // the base of every invite link the CLI prints.
       AUTH_SECRET: E2E_AUTH_SECRET,
       AUTH_BASE_URL: "http://localhost:3111",
+      // A Google client that does not exist: enough for the sign-in page to offer the
+      // button and for the redirect to Google to be observed, which is as far as a
+      // test can go without a Google account.
+      GOOGLE_CLIENT_ID: "e2e-google-client-id.apps.googleusercontent.com",
+      GOOGLE_CLIENT_SECRET: "e2e-google-client-secret",
     },
     /**
      * Readiness, not liveness.
