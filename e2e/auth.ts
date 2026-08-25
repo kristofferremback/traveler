@@ -31,8 +31,18 @@ export function mintInvite(email: string): string {
     stdio: ["ignore", "pipe", "ignore"],
   });
   const url = stdout.trim();
-  expect(url).toMatch(/^http:\/\/localhost:3111\/api\/auth\/magic-link\/verify\?token=/);
+  expect(url).toMatch(/^http:\/\/localhost:3111\/invite#token=/);
   return url;
+}
+
+/**
+ * The request the /invite page makes when its button is pressed. Tests that only need
+ * a session skip the page and make it directly.
+ */
+export function verifyUrlOf(inviteUrl: string): string {
+  const token = new URLSearchParams(new URL(inviteUrl).hash.slice(1)).get("token");
+  expect(token).toBeTruthy();
+  return `${E2E_BASE}/api/auth/magic-link/verify?token=${encodeURIComponent(token!)}&callbackURL=%2Fwelcome`;
 }
 
 let counter = 0;
@@ -51,7 +61,7 @@ export async function signInRequest(
   request: APIRequestContext,
   email = uniqueEmail(),
 ): Promise<void> {
-  const res = await request.get(mintInvite(email));
+  const res = await request.get(verifyUrlOf(mintInvite(email)));
   expect(res.ok()).toBeTruthy();
 }
 
@@ -72,5 +82,6 @@ export async function signInContext(
 /** Follow an invite in the browser, the way an invited person does. */
 export async function followInvite(page: Page, url: string): Promise<void> {
   await page.goto(url);
+  await page.getByRole("button", { name: "Fortsätt" }).click();
   await expect(page).toHaveURL(/\/welcome/);
 }

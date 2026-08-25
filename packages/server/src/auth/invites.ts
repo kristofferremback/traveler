@@ -1,5 +1,6 @@
 import { db } from "../db/index.ts";
 import { AppError } from "../lib/errors.ts";
+import { env } from "../env.ts";
 import { auth } from "./auth.ts";
 
 /** Invite links last a week. Long enough to reach someone, short enough to expire. */
@@ -18,8 +19,25 @@ let pending: { email: string; url: string } | null = null;
 /** One invite at a time, so `pending` always belongs to the call that is reading it. */
 let queue: Promise<unknown> = Promise.resolve();
 
+/**
+ * Turn Better Auth's verify URL into the link people are given.
+ *
+ * The verify endpoint signs in whoever fetches it, and chat apps and mail clients fetch
+ * links to preview them, so handing out the verify URL got invites spent before anyone
+ * saw them. The link points at the /invite page instead, with the token in the fragment:
+ * browsers never send a fragment to a server, so a preview fetch learns nothing, and the
+ * page makes the verify request only when the person presses the button.
+ */
+export function inviteUrl(verifyUrl: string): string {
+  const token = new URL(verifyUrl).searchParams.get("token");
+  if (!token) {
+    throw new AppError("invite_failed", "Kunde inte skapa inbjudan. Försök igen.", 500);
+  }
+  return `${env.AUTH_BASE_URL}/invite#token=${encodeURIComponent(token)}`;
+}
+
 export function recordInvite(email: string, url: string): void {
-  pending = { email, url };
+  pending = { email, url: inviteUrl(url) };
 }
 
 /** Read and clear the captured link. Declared return type, so the narrowing is honest. */
@@ -99,9 +117,9 @@ export interface InviteRow {
 }
 
 /** The token inside an invite link, which is also the verification row's identifier. */
-function tokenOf(url: string): string | null {
+export function tokenOf(url: string): string | null {
   try {
-    return new URL(url).searchParams.get("token");
+    return new URLSearchParams(new URL(url).hash.replace(/^#/, "")).get("token");
   } catch {
     return null;
   }
