@@ -16,15 +16,14 @@ function iso(value: unknown): string | null {
 /**
  * Everything the settings page needs about the caller, in one request.
  *
- * The passkey and api-key lists come from Better Auth's own endpoints rather than a
- * query of our own, so a plugin that changes what it stores cannot leave this reading
- * columns that moved.
+ * The api-key list comes from Better Auth's own endpoint rather than a query of our
+ * own, so a plugin that changes what it stores cannot leave this reading columns that
+ * moved.
  */
 account.get("/me", async (c) => {
   const user = c.get("user");
   const headers = c.req.raw.headers;
 
-  const passkeys = await auth.api.listPasskeys({ headers }).catch(() => []);
   // listApiKeys answers with a bare array or a paginated envelope depending on the
   // query; we ask for neither page nor filter, so both shapes have to be accepted.
   const listed = await auth.api.listApiKeys({ headers }).catch(() => []);
@@ -32,11 +31,6 @@ account.get("/me", async (c) => {
 
   const body: MeResponse = {
     user: { id: user.id, email: user.email, name: user.name },
-    passkeys: passkeys.map((p) => ({
-      id: p.id,
-      name: p.name ?? null,
-      createdAt: iso(p.createdAt),
-    })),
     apiKeys: apiKeys.map((k) => ({
       id: k.id,
       name: k.name ?? null,

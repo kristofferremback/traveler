@@ -8,6 +8,7 @@ import type {
   JourneyResponse,
   InviteResponse,
   MeResponse,
+  SignInMethodsResponse,
   Neighbourhood,
   Place,
   SavedPlace,
@@ -158,6 +159,7 @@ export const api = {
 
   me: (signal?: AbortSignal) => get<MeResponse>("/me", {}, signal),
 
+  signInMethods: () => get<SignInMethodsResponse>("/sign-in-methods"),
   createInvite: (body: { email: string; name?: string }) =>
     send<InviteResponse>("POST", "/invites", body),
 

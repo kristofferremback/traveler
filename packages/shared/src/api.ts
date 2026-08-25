@@ -214,6 +214,13 @@ export type ReadyResponse = z.infer<typeof ReadyResponse>;
 // --- Account ----------------------------------------------------------------
 
 /** Body of POST /api/invites. The name is only used for the account it may create. */
+/** Which sign-in methods this instance offers; the sign-in page asks before rendering. */
+export const SignInMethodsResponse = z.object({
+  /** Google sign-in is offered when the server has a Google OAuth client configured. */
+  google: z.boolean(),
+});
+export type SignInMethodsResponse = z.infer<typeof SignInMethodsResponse>;
+
 export const InviteRequest = z.object({
   email: z.string().trim().email().max(254),
   name: z.string().trim().max(120).optional(),
@@ -234,13 +241,6 @@ export type InvitesResponse = z.infer<typeof InvitesResponse>;
 
 export const MeResponse = z.object({
   user: z.object({ id: z.string(), email: z.string(), name: z.string() }),
-  passkeys: z.array(
-    z.object({
-      id: z.string(),
-      name: z.string().nullable(),
-      createdAt: z.string().nullable(),
-    }),
-  ),
   apiKeys: z.array(
     z.object({
       id: z.string(),

@@ -5,7 +5,7 @@ import { defineRailway, github, preserve, project, service, volume } from "railw
  * file and the live project; `railway config apply` makes the project match it.
  *
  * One service, one volume. Secrets are `preserve()`d: they live in Railway, not here.
- * AUTH_BASE_URL is preserved too, because it is the passkey relying party and the base of
+ * AUTH_BASE_URL is preserved too, because it is the Google return address and the base of
  * every invite link: it has to be the address people actually open, which is decided in
  * DNS rather than in this file.
  */
@@ -35,6 +35,8 @@ export default defineRailway(() => {
       DATABASE_PATH: "/data/traveler.db",
       AUTH_SECRET: preserve(),
       AUTH_BASE_URL: preserve(),
+      GOOGLE_CLIENT_ID: preserve(),
+      GOOGLE_CLIENT_SECRET: preserve(),
     },
     volumeMounts: {
       "/data": data,

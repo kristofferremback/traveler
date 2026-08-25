@@ -621,9 +621,9 @@ test.describe("sign-in and the gate", () => {
     const page = await context.newPage();
     await page.goto("/");
     await expect(page).toHaveURL(/\/signin$/);
-    await expect(page.getByRole("button", { name: "Logga in med passkey" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Logga in med Google" })).toBeVisible();
     // No email field, no password: an invite is the only way to a new account.
-    await expect(page.getByText("Ny här? Öppna din inbjudningslänk.")).toBeVisible();
+    await expect(page.getByText(/Ny här\?/)).toBeVisible();
     await context.close();
   });
 
@@ -632,10 +632,6 @@ test.describe("sign-in and the gate", () => {
     const page = await context.newPage();
 
     await followInvite(page, mintInvite(uniqueEmail()));
-    await expect(page.getByRole("heading", { name: "Välkommen" })).toBeVisible();
-
-    // "Hoppa över" is a real way out; adding a passkey must not be a wall.
-    await page.getByRole("link", { name: "Hoppa över" }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole("button", { name: /^Från/ })).toBeVisible();
 
@@ -654,7 +650,7 @@ test.describe("sign-in and the gate", () => {
     const page = await second.newPage();
     await page.goto(url);
     await page.getByRole("button", { name: "Fortsätt" }).click();
-    await expect(page.getByText("Länken har redan använts eller gått ut. Be om en ny.")).toBeVisible();
+    await expect(page.getByText("Inbjudningslänken har redan använts eller gått ut. Be om en ny.")).toBeVisible();
     // Shown the message and not signed in, which is the part that matters.
     expect((await page.request.get("/api/me")).status()).toBe(401);
     await second.close();
@@ -808,42 +804,30 @@ test.describe("sign-in and the gate", () => {
     await expect(page.getByText(value)).toHaveCount(0);
   });
 
-  test("adds a passkey and signs in with it", async ({ browser }) => {
+  test("sends a Google sign-in to Google with this instance as the return address", async ({
+    browser,
+  }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
+    // Google itself is out of reach for a test; what can be checked is that the button
+    // starts the OAuth dance towards accounts.google.com with our callback in it.
+    const toGoogle = page.waitForRequest((req) => req.url().startsWith("https://accounts.google.com/"));
+    await page.route("https://accounts.google.com/**", (route) => route.abort());
+    await page.goto("/signin");
+    await page.getByRole("button", { name: "Logga in med Google" }).click();
+    const url = new URL((await toGoogle).url());
+    expect(url.searchParams.get("client_id")).toBe("e2e-google-client-id.apps.googleusercontent.com");
+    expect(url.searchParams.get("redirect_uri")).toBe("http://localhost:3111/api/auth/callback/google");
+    await context.close();
+  });
 
-    // Chrome's virtual authenticator: a platform authenticator (transport "internal",
-    // like a phone's fingerprint sensor) that reports the user as verified, so the
-    // WebAuthn calls resolve without a human touching anything.
-    const cdp = await context.newCDPSession(page);
-    await cdp.send("WebAuthn.enable");
-    const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
-      options: {
-        protocol: "ctap2",
-        transport: "internal",
-        hasResidentKey: true,
-        hasUserVerification: true,
-        isUserVerified: true,
-        automaticPresenceSimulation: true,
-      },
-    });
-    expect(authenticatorId).toBeTruthy();
-
-    await followInvite(page, mintInvite(uniqueEmail()));
-    await page.getByRole("button", { name: "Lägg till passkey" }).click();
-    await expect(page).toHaveURL(/\/$/);
-
-    await page.goto("/settings");
-    await expect(page.getByText(/tillagd /)).toBeVisible();
-
-    await page.getByRole("button", { name: "Logga ut" }).click();
-    await expect(page).toHaveURL(/\/signin$/);
-
-    // The point of the whole exercise: a second sign-in with no link and no password.
-    await page.getByRole("button", { name: "Logga in med passkey" }).click();
-    await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole("button", { name: /^Från/ })).toBeVisible();
-
+  test("explains a Google sign-in for an address nobody invited", async ({ browser }) => {
+    // The refusal itself happens inside Better Auth's callback, which sends the browser
+    // back here with the code the create hook threw. The words are what a person sees.
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto("/signin?error=NOT_INVITED");
+    await expect(page.getByRole("alert")).toContainText("Ingen inbjudan finns för den här adressen");
     await context.close();
   });
 

@@ -24,12 +24,12 @@ fi
 TS_HOST="$(tailscale status --json | grep -o '"DNSName":"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/\.$//')"
 TS_URL="https://${TS_HOST}:${TS_PORT}"
 
-# Passkeys are registered against this hostname and invite links are built from it, so
-# it has to be the address the phone actually opens: the tailnet one, unless overridden.
+# Invite links are built from this hostname, so it has to be the address the phone
+# actually opens: the tailnet one, unless overridden.
 export AUTH_BASE_URL="${AUTH_BASE_URL:-$TS_URL}"
 
 # Production mode refuses to start without a signing secret. Generate one the first time
-# and keep it in .env, so sessions and passkeys survive a restart; rotating it signs
+# and keep it in .env, so sessions survive a restart; rotating it signs
 # everyone out, which is the intended emergency lever.
 if [ -z "${AUTH_SECRET:-}" ]; then
   AUTH_SECRET="$(openssl rand -base64 32)"

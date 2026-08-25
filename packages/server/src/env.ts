@@ -69,12 +69,18 @@ const Env = z.object({
     .optional()
     .transform((v) => (v ? v : undefined)),
   /**
-   * The origin this instance is reached on. It is the passkey relying party (a passkey
-   * is bound to the hostname, so this being wrong makes every passkey silently
-   * unusable), the base of invite links, and what decides whether session cookies are
-   * marked secure. Defaults to localhost on PORT.
+   * The origin this instance is reached on. It is the base of invite links, the origin
+   * Google sends people back to, and what decides whether session cookies are marked
+   * secure. Defaults to localhost on PORT.
    */
   AUTH_BASE_URL: z.string().url().optional(),
+  /**
+   * An OAuth client from the Google Cloud console, with
+   * `<AUTH_BASE_URL>/api/auth/callback/google` as its redirect URI. Both or neither:
+   * without them the sign-in page offers only invite links.
+   */
+  GOOGLE_CLIENT_ID: z.string().trim().optional().transform((v) => (v ? v : undefined)),
+  GOOGLE_CLIENT_SECRET: z.string().trim().optional().transform((v) => (v ? v : undefined)),
   /** Extra origins allowed to call the auth API, e.g. the Vite dev server on :5173. */
   AUTH_TRUSTED_ORIGINS: z
     .string()
@@ -107,13 +113,20 @@ if (isProd && !parsed.AUTH_SECRET) {
 }
 
 if (isProd && !parsed.AUTH_BASE_URL) {
-  // Without it, invite links point at localhost and every passkey is registered for a
-  // hostname nobody reaches the instance on. Better to refuse to start than to mint
+  // Without it, invite links point at localhost and Google would send people back to
+  // a hostname nobody reaches the instance on. Better to refuse to start than to mint
   // accounts that cannot be used.
   throw new Error(
     "AUTH_BASE_URL is required when NODE_ENV=production, e.g. https://traveler.example.com",
   );
 }
+
+if (Boolean(parsed.GOOGLE_CLIENT_ID) !== Boolean(parsed.GOOGLE_CLIENT_SECRET)) {
+  throw new Error("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together.");
+}
+
+/** Google sign-in is offered only when a client is configured. */
+export const googleSignIn = Boolean(parsed.GOOGLE_CLIENT_ID && parsed.GOOGLE_CLIENT_SECRET);
 
 /** True when the dev fallback is in use; index.ts and the CLI warn about it at boot. */
 export const usingDevAuthSecret = !parsed.AUTH_SECRET;

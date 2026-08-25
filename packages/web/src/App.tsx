@@ -7,7 +7,6 @@ import { StopPage } from "./routes/StopPage";
 import { NearbyPage } from "./routes/NearbyPage";
 import { DisruptionsPage } from "./routes/DisruptionsPage";
 import { SignInPage } from "./routes/SignInPage";
-import { WelcomePage } from "./routes/WelcomePage";
 import { InvitePage } from "./routes/InvitePage";
 import { SettingsPage } from "./routes/SettingsPage";
 import { PlacesPage } from "./routes/PlacesPage";
@@ -87,7 +86,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 }
 
 /** Routes that make sense without an account. Everything else needs one. */
-const PUBLIC_ROUTES = new Set(["/signin", "/welcome", "/invite"]);
+const PUBLIC_ROUTES = new Set(["/signin", "/invite"]);
 
 export function App() {
   const { data: session, isPending } = useSession();
@@ -133,7 +132,6 @@ export function App() {
           <Route path="/places/new" element={<NewPlacePage />} />
           <Route path="/places/:id" element={<PlacePage />} />
           <Route path="/signin" element={<SignInPage />} />
-          <Route path="/welcome" element={<WelcomePage />} />
           <Route path="/invite" element={<InvitePage />} />
           <Route
             path="*"

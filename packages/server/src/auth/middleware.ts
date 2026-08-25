@@ -28,6 +28,7 @@ declare module "hono" {
 const PUBLIC_API = new Set([
   "/api/health",
   "/api/ready",
+  "/api/sign-in-methods",
   "/api/catalog/sync",
   "/api/openapi.json",
 ]);

@@ -25,6 +25,7 @@ import {
   PlaceSearchQuery,
   PlaceSearchResponse,
   ReadyResponse,
+  SignInMethodsResponse,
   SavedPlaceInput,
   SavedPlacePatch,
   SavedPlaceResponse,
@@ -116,6 +117,16 @@ export const ROUTES: RouteDoc[] = [
       "Answers 200 from the moment the process is up, even with an empty catalog, so a platform health check cannot kill a container during its first sync. Use /api/ready to find out whether the catalog can actually answer.",
     tags: ["Meta"],
     response: HealthResponse,
+    public: true,
+  },
+  {
+    method: "get",
+    path: "/api/sign-in-methods",
+    summary: "Which sign-in methods this instance offers",
+    description:
+      "Public, because the sign-in page has no session yet. `google` is true when the server has a Google OAuth client configured; invite links always work.",
+    tags: ["Meta"],
+    response: SignInMethodsResponse,
     public: true,
   },
   {
@@ -375,7 +386,7 @@ export const ROUTES: RouteDoc[] = [
   {
     method: "get",
     path: "/api/me",
-    summary: "Who you are, with your passkeys and API keys",
+    summary: "Who you are, with your API keys",
     tags: ["Account"],
     response: MeResponse,
   },

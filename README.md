@@ -36,16 +36,19 @@ bun run invite you@example.com "Your name"
 ```
 
 It prints one line, the link. Opening it shows a single "Fortsätt" button; pressing it
-signs you in, creates the account, and offers to add a passkey; from then on "Logga in
-med passkey" is the whole sign-in. The link works once and for seven days, and nothing
-is emailed anywhere -- passing it on is your job. It is safe to paste into a chat: the
-token sits in the URL fragment, so the link previews chat apps fetch cannot spend it. Later invites are easier to make from **Mer -> Bjud in**, which shows the link and
-a QR code for the phone across the table.
+signs you in and creates the account. The link works once and for seven days, and
+nothing is emailed anywhere -- passing it on is your job. It is safe to paste into a
+chat: the token sits in the URL fragment, so the link previews chat apps fetch cannot
+spend it. Later invites are easier to make from **Mer -> Bjud in**, which shows the
+link and a QR code for the phone across the table.
 
-Passkeys need a secure context. `http://localhost` counts, so development is fine, but
-a plain `http://192.168.x.x` does not: use `./run-tailscale.sh` to reach it from a
-phone. A passkey is bound to the hostname in `AUTH_BASE_URL`, so changing that origin
-makes existing passkeys unusable and everyone needs a new invite.
+The invite is also the allow-list for Google. With `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` set (an OAuth "Web application" client from the Google Cloud
+console with `<AUTH_BASE_URL>/api/auth/callback/google` as its redirect URI), the
+sign-in page offers "Logga in med Google", and an invited address can use it straight
+away, on any device, without ever opening the link. An address nobody invited is
+refused before an account exists. Without a Google client, the invite link is the only
+way in.
 
 For agents and scripts, **Mer -> API-nycklar** creates a key, shown once. A key is a
 session, so it reaches every route the browser does; see "API for agents" below. Set
@@ -211,11 +214,11 @@ except through the proxy. `tailscale serve` is tailnet-only; `tailscale funnel` 
 put it on the public internet, which this app is not built for.
 
 The script runs the server in production mode with `AUTH_BASE_URL` set to the tailnet
-address (passkeys register against it, invite links are built from it) and generates an
-`AUTH_SECRET` into the repo-root `.env` the first time. Mint the first account from
-another shell: `AUTH_BASE_URL=https://<machine>.<tailnet>.ts.net:8443 bun run invite you@example.com`,
-open the link on the phone, add a passkey. A passkey made here will not be offered on a
-different hostname later; that is a new invite, not a bug.
+address (invite links are built from it) and generates an `AUTH_SECRET` into the
+repo-root `.env` the first time. Mint the first account from another shell:
+`AUTH_BASE_URL=https://<machine>.<tailnet>.ts.net:8443 bun run invite you@example.com`
+and open the link on the phone. Google sign-in needs the tailnet address registered as
+a redirect URI on the Google client, so over Tailscale the link is usually the way in.
 
 ## Maps
 
@@ -248,8 +251,8 @@ the auth endpoints themselves. `POST /api/catalog/sync` additionally exists only
 `ADMIN_TOKEN` is set and is guarded by it; unset, the route is not registered.
 
 `AUTH_SECRET` is required in production and the server refuses to start without it.
-`AUTH_BASE_URL` must be the origin people actually reach, because it is the passkey
-relying party and the base of invite links.
+`AUTH_BASE_URL` must be the origin people actually reach, because it is the base of
+invite links and where Google sends people back to.
 
 There are two probes, and the difference matters.
 
@@ -273,10 +276,10 @@ only in Railway.
    for a new one) and `railway config plan` to see what differs from the file.
 2. `railway config apply` creates or updates the service and volume to match.
 3. Set the secrets once: `railway variable set AUTH_SECRET=$(openssl rand -base64 32)`
-   and `AUTH_BASE_URL=https://<your domain>`. Optional: `ADMIN_TOKEN`, `TRAFIKLAB_GTFS_RT_KEY`.
-4. Put the final domain on the service before the first invite is followed there.
-   Passkeys are registered against `AUTH_BASE_URL`'s hostname; changing it later means a
-   new invite and a new passkey for each person.
+   and `AUTH_BASE_URL=https://<your domain>`. For Google sign-in, `GOOGLE_CLIENT_ID` and
+   `GOOGLE_CLIENT_SECRET` (see Sign-in). Optional: `ADMIN_TOKEN`, `TRAFIKLAB_GTFS_RT_KEY`.
+4. Put the final domain on the service before the first invite is minted there: the
+   link is built from `AUTH_BASE_URL`, and the Google client's redirect URI names it.
 5. Mint the first invite from the Railway shell: `railway ssh -- bun run invite you@example.com`.
 
 The image sets `HOST=0.0.0.0`: the server binds loopback by default, which is right on a

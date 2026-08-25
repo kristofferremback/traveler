@@ -5,7 +5,7 @@ import QRCode from "qrcode";
 import type { CommuteSettings } from "@traveler/shared";
 import { ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
-import { authClient, authErrorMessage, deviceLabel } from "@/lib/auth";
+import { authClient, authErrorMessage } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -242,26 +242,6 @@ export function SettingsPage() {
     onError: (e: Error) => setError(e.message),
   });
 
-  async function addPasskey() {
-    setError(null);
-    try {
-      const result = await authClient.passkey.addPasskey({ name: deviceLabel() });
-      if (result?.error) {
-        setError(authErrorMessage(result.error, "Passkeyn kunde inte sparas."));
-        return;
-      }
-      void refresh();
-    } catch {
-      setError("Passkeyn kunde inte sparas.");
-    }
-  }
-
-  async function removePasskey(id: string, name: string | null) {
-    if (!window.confirm(`Ta bort passkeyn ${name ?? "utan namn"}?`)) return;
-    await authClient.passkey.deletePasskey({ id });
-    void refresh();
-  }
-
   async function removeKey(id: string, name: string | null) {
     if (!window.confirm(`Ta bort nyckeln ${name ?? "utan namn"}?`)) return;
     await authClient.apiKey.delete({ keyId: id });
@@ -311,44 +291,6 @@ export function SettingsPage() {
           )}
           <Button variant="outline" onClick={logOut}>
             Logga ut
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Passkeys</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {me.isPending ? (
-            <Skeleton className="h-5 w-full" />
-          ) : me.data?.passkeys.length ? (
-            <ul className="divide-y divide-[var(--color-border)]">
-              {me.data.passkeys.map((passkey) => (
-                <li key={passkey.id} className="flex items-center justify-between gap-2 py-2">
-                  <span className="text-sm">
-                    {passkey.name ?? "Utan namn"}
-                    <span className="block text-xs text-[var(--color-muted)]">
-                      tillagd {formatDate(passkey.createdAt)}
-                    </span>
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removePasskey(passkey.id, passkey.name)}
-                  >
-                    Ta bort
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-[var(--color-muted)]">
-              Inga passkeys än. Utan en behöver du en ny inbjudningslänk för att logga in.
-            </p>
-          )}
-          <Button variant="secondary" onClick={addPasskey}>
-            Lägg till passkey
           </Button>
         </CardContent>
       </Card>

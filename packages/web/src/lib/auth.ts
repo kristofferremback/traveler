@@ -1,5 +1,4 @@
 import { createAuthClient } from "better-auth/react";
-import { passkeyClient } from "@better-auth/passkey/client";
 import { apiKeyClient } from "@better-auth/api-key/client";
 
 const BASE = import.meta.env.VITE_API_BASE ?? "";
@@ -14,23 +13,10 @@ const BASE = import.meta.env.VITE_API_BASE ?? "";
  */
 export const authClient = createAuthClient({
   ...(BASE ? { baseURL: `${BASE}/api/auth` } : {}),
-  plugins: [passkeyClient(), apiKeyClient()],
+  plugins: [apiKeyClient()],
 });
 
 export const { useSession, signOut } = authClient;
-
-/**
- * A label for a new passkey, so a list of three of them is readable later.
- *
- * `userAgentData` is Chromium-only and the platform string is coarse ("Android",
- * "macOS"), which is exactly the granularity wanted here. Everything else gets a name
- * the person can recognise as "the device I was holding".
- */
-export function deviceLabel(): string {
-  const data = (navigator as Navigator & { userAgentData?: { platform?: string } })
-    .userAgentData;
-  return data?.platform?.trim() || "Den här enheten";
-}
 
 /** Better Auth returns errors in the payload rather than throwing. */
 export function authErrorMessage(
