@@ -78,6 +78,9 @@ curl -H "x-api-key: $KEY" \
 both ends, when to leave, and whether the departure is still catchable. `from` and `to`
 take a place id from `/api/places/search`, a bare `lat,lon`, or `place:<id>` for one of
 your own saved places.
+`when` (an ISO instant) plans from a later departure; add `arriveBy=1` to read it as the
+latest arrival instead, which ranks options by how late you can leave and drops any that
+land after it.
 
 The limit is 120 requests a minute per key. Over that is a 429.
 

@@ -80,7 +80,7 @@ describe("foldDrafts", () => {
       boardAt: T0 + min(5),
       alightAt: T0 + min(30),
     });
-    const options = foldDrafts([atCylinder, atJarlaberg], "origin", settings, T0, T0);
+    const options = foldDrafts([atCylinder, atJarlaberg], "origin", settings, { at: T0, arriveBy: false }, T0);
     expect(options).toHaveLength(1);
     expect(options[0]!.origin.stop?.name).toBe("Jarlaberg");
     expect(options[0]!.alternatives.map((a) => a.stop.name)).toEqual(["Cylindervägen"]);
@@ -104,7 +104,7 @@ describe("foldDrafts", () => {
       arriveAt: T0 + min(32),
       ourWalk: 0,
     });
-    const options = foldDrafts([early, through], "destination", settings, T0, T0);
+    const options = foldDrafts([early, through], "destination", settings, { at: T0, arriveBy: false }, T0);
     expect(options).toHaveLength(1);
     expect(options[0]!.destination.stop?.name).toBe("Jarlaberg");
     expect(options[0]!.arriveAt).toBe(new Date(T0 + min(32)).toISOString());
@@ -137,7 +137,7 @@ describe("foldDrafts", () => {
       arriveAt: T0 + min(23),
       transfers: 1,
     });
-    const options = foldDrafts([direct, pointless, worthwhile], "destination", settings, T0, T0);
+    const options = foldDrafts([direct, pointless, worthwhile], "destination", settings, { at: T0, arriveBy: false }, T0);
     expect(options.map((o) => o.vehicleKey)).toEqual(["443:133>18:77", "443:133"]);
   });
 
@@ -146,7 +146,7 @@ describe("foldDrafts", () => {
     const tight = draft({ vehicleKey: "b", ourStop: trafikplats, boardAt: T0 + min(9.5) }); // leave T0+0.5
     const best = draft({ vehicleKey: "c", ourStop: jarlaberg, boardAt: T0 + min(3), alightAt: T0 + min(20) });
     const later = draft({ vehicleKey: "d", ourStop: jarlaberg, boardAt: T0 + min(10), alightAt: T0 + min(40) });
-    const options = foldDrafts([missed, tight, best, later], "origin", settings, T0, T0);
+    const options = foldDrafts([missed, tight, best, later], "origin", settings, { at: T0, arriveBy: false }, T0);
     expect(options.map((o) => [o.vehicleKey, o.status])).toEqual([
       ["c", "recommended"],
       ["b", "tight"],
@@ -158,8 +158,32 @@ describe("foldDrafts", () => {
   test("the same leave, arrival, stop and changes is one row, whichever line it rides", () => {
     const via13 = draft({ vehicleKey: "13:1>442:5", ourStop: trafikplats, transfers: 1 });
     const via19 = draft({ vehicleKey: "19:2>442:5", ourStop: trafikplats, transfers: 1 });
-    const options = foldDrafts([via13, via19], "destination", settings, T0, T0);
+    const options = foldDrafts([via13, via19], "destination", settings, { at: T0, arriveBy: false }, T0);
     expect(options).toHaveLength(1);
+  });
+
+  test("arriving by a deadline, the latest door-leave wins and late arrivals are not offered", () => {
+    const deadline = T0 + min(60);
+    const early = draft({ vehicleKey: "a", ourStop: jarlaberg, boardAt: T0 + min(10), alightAt: T0 + min(40) });
+    const latest = draft({ vehicleKey: "b", ourStop: jarlaberg, boardAt: T0 + min(25), alightAt: T0 + min(58) });
+    const late = draft({ vehicleKey: "c", ourStop: jarlaberg, boardAt: T0 + min(30), alightAt: T0 + min(63) });
+    const options = foldDrafts([early, latest, late], "origin", settings, { at: deadline, arriveBy: true }, T0);
+    expect(options.map((o) => [o.vehicleKey, o.status])).toEqual([
+      ["b", "recommended"],
+      ["a", "ok"],
+    ]);
+  });
+
+  test("a deadline tomorrow leaves nothing missed; a deadline now is judged by the clock", () => {
+    const gone = draft({ vehicleKey: "a", ourStop: jarlaberg, boardAt: T0 - min(5), alightAt: T0 + min(20) });
+    const next = draft({ vehicleKey: "b", ourStop: jarlaberg, boardAt: T0 + min(5), alightAt: T0 + min(30) });
+    const tomorrow = foldDrafts([gone, next], "origin", settings, { at: T0 + min(40), arriveBy: true }, T0 - min(24 * 60));
+    expect(tomorrow.map((o) => o.status)).toEqual(["recommended", "ok"]);
+    const soon = foldDrafts([gone, next], "origin", settings, { at: T0 + min(40), arriveBy: true }, T0);
+    expect(soon.map((o) => [o.vehicleKey, o.status])).toEqual([
+      ["b", "recommended"],
+      ["a", "missed"],
+    ]);
   });
 
   test("the transfer penalty ranks one bus above two at roughly the same time", () => {
@@ -172,7 +196,7 @@ describe("foldDrafts", () => {
       arriveAt: T0 + min(32),
       transfers: 1,
     });
-    const options = foldDrafts([oneBus, twoBuses], "destination", settings, T0, T0);
+    const options = foldDrafts([oneBus, twoBuses], "destination", settings, { at: T0, arriveBy: false }, T0);
     expect(options[0]!.vehicleKey).toBe("443:1");
   });
 });
