@@ -572,6 +572,45 @@ test.describe("the commute screen", () => {
     await expect(pill).toHaveText("Nu");
   });
 
+  test("Tidigare moves the planning time back ten minutes and Back undoes it", async ({ page }) => {
+    await page.goto(trip);
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+    const before = Date.now();
+
+    await page.getByRole("button", { name: "Tidigare" }).click();
+    await expect(page).toHaveURL(/when=/);
+    const when = new URL(page.url()).searchParams.get("when")!;
+    const shift = before - new Date(when).getTime();
+    expect(shift).toBeGreaterThanOrEqual(10 * 60_000 - 1000);
+    expect(shift).toBeLessThan(11 * 60_000);
+    await expect(page.getByRole("button", { name: /^Avgång/ })).toBeVisible();
+    // Still answering: the rows planned from ten minutes ago include what is live now.
+    await expect(rows(page).first()).toBeVisible({ timeout: 60_000 });
+
+    await page.goBack();
+    await expect(page).toHaveURL(/^(?!.*when=).*$/);
+  });
+
+  test("refreshing plans from where the phone is now, not where it was", async ({ page, context }) => {
+    await context.grantPermissions(["geolocation"]);
+    // Slussen first, then Jarlaberg: the same commute, from the other end.
+    await context.setGeolocation({ latitude: 59.3196, longitude: 18.0722 });
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/commute")) asked.push(decodeURIComponent(r.url()));
+    });
+
+    await page.goto(`/?from=me&to=place:${homeId}`);
+    await expect.poll(() => asked.some((u) => u.includes("from=59.3196,18.0722")), { timeout: 120_000 }).toBe(true);
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+
+    await context.setGeolocation({ latitude: 59.31557, longitude: 18.16948 });
+    await page.getByRole("button", { name: "Uppdatera" }).click();
+    await expect.poll(() => asked.some((u) => u.includes("from=59.31557,18.16948")), { timeout: 60_000 }).toBe(true);
+    // The rows were replaced in place; no skeleton pass in between.
+    await expect(rows(page).first()).toBeVisible();
+  });
+
   test("survives an API outage without a white screen", async ({ page }) => {
     await page.route("**/api/commute*", (route) =>
       route.fulfill({

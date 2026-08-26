@@ -9,7 +9,9 @@ import { PlaceChips } from "@/components/PlaceChips";
 import { PlacePicker } from "@/components/PlacePicker";
 import { TimePicker, TimePill, type PlanTime } from "@/components/TimePicker";
 import { Button } from "@/components/ui/button";
+import { History, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 /**
  * The map is the screen, so it is rendered immediately -- no "show map" button.
@@ -24,6 +26,31 @@ const TransitMap = lazy(() =>
 
 /** How often the countdown is recomputed. Under a minute, so "om 4 min" is never stale. */
 const TICK_MS = 10_000;
+/** How far "Tidigare" moves the planning time per tap. */
+const EARLIER_MS = 10 * 60_000;
+
+type Position = { lat: number; lon: number };
+
+/**
+ * Where the phone is right now, asked for every time it is needed.
+ *
+ * Not cached: a commute screen left open on the walk to the stop must plan from the
+ * stop, not from the front door it was opened at. A stale fix is worse than a slow one
+ * here, so `maximumAge` is zero and the timeout is generous.
+ */
+function currentPosition(): Promise<Position> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("no geolocation"));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => resolve({ lat: coords.latitude, lon: coords.longitude }),
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
+    );
+  });
+}
 
 type PlaceRef = string;
 
@@ -59,32 +86,8 @@ export function CommutePage() {
   const when = params.get("when");
   const time: PlanTime = when ? { when, arriveBy: params.get("arriveBy") === "1" } : null;
 
-  const [position, setPosition] = useState<{ lat: number; lon: number } | null>(null);
   const [positionDenied, setPositionDenied] = useState(false);
-
   const needsPosition = fromRef === "me" || toRef === "me";
-  useEffect(() => {
-    if (!needsPosition || position || positionDenied) return;
-    if (!navigator.geolocation) {
-      setPositionDenied(true);
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => setPosition({ lat: coords.latitude, lon: coords.longitude }),
-      // Denied, unavailable or timed out all mean the same thing here: the chip has to
-      // say so, because otherwise the screen simply never loads and never explains why.
-      () => setPositionDenied(true),
-      { enableHighAccuracy: true, timeout: 8000 },
-    );
-  }, [needsPosition, position, positionDenied]);
-
-  const asApiRef = (ref: PlaceRef | null): string | null => {
-    if (!ref) return null;
-    if (ref !== "me") return ref;
-    return position ? `${position.lat},${position.lon}` : null;
-  };
-  const apiFrom = asApiRef(fromRef);
-  const apiTo = asApiRef(toRef);
   const sameEnds = Boolean(fromRef && toRef && fromRef === toRef);
 
   /**
@@ -96,24 +99,46 @@ export function CommutePage() {
    */
   const paths = useRef<"recommended" | "all">("recommended");
 
+  /**
+   * The position is fetched inside the query rather than held in state and put in the
+   * key: the key stays the refs the traveller chose, so a new fix on the next refresh
+   * replaces the rows in place instead of emptying the list to skeletons first.
+   */
   const commute = useQuery({
-    queryKey: ["commute", apiFrom, apiTo, time?.when ?? null, time?.arriveBy ?? false],
-    enabled: Boolean(apiFrom && apiTo) && !sameEnds,
-    queryFn: ({ signal }) =>
-      api.commute(
+    queryKey: ["commute", fromRef, toRef, time?.when ?? null, time?.arriveBy ?? false],
+    enabled: Boolean(fromRef && toRef) && !sameEnds,
+    queryFn: async ({ signal }) => {
+      let here: Position | null = null;
+      if (needsPosition) {
+        try {
+          here = await currentPosition();
+          setPositionDenied(false);
+        } catch {
+          // Denied, unavailable or timed out all mean the same thing here: the chip has
+          // to say so, because otherwise the screen never loads and never explains why.
+          setPositionDenied(true);
+          throw new ApiError("no_position", "Ingen åtkomst till din position.", 0);
+        }
+      }
+      const asApiRef = (ref: PlaceRef): string =>
+        ref === "me" ? `${here!.lat},${here!.lon}` : ref;
+      return api.commute(
         {
-          from: apiFrom!,
-          to: apiTo!,
+          from: asApiRef(fromRef!),
+          to: asApiRef(toRef!),
           ...(time ? { when: time.when, ...(time.arriveBy ? { arriveBy: "1" as const } : {}) } : {}),
           paths: paths.current,
         },
         signal,
-      ),
-    staleTime: 30_000,
-    // Only while the screen is actually being looked at: a phone in a pocket does not
-    // need a plan every minute, and SL does not need the traffic.
-    refetchInterval: () => (document.visibilityState === "visible" ? 60_000 : false),
-    refetchOnWindowFocus: true,
+      );
+    },
+    retry: (count, err) => !(err instanceof ApiError && err.code === "no_position") && count < 3,
+    // Nothing moves under the traveller's nose: the list changes only when they ask
+    // (Uppdatera, Tidigare, a chip). The header says how old it is; the countdown on
+    // each row keeps ticking against the same answer.
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const options = useMemo(() => commute.data?.options ?? [], [commute.data]);
@@ -126,7 +151,7 @@ export function CommutePage() {
   useEffect(() => {
     setSelectedId(null);
     paths.current = "recommended";
-  }, [apiFrom, apiTo, time?.when, time?.arriveBy]);
+  }, [fromRef, toRef, time?.when, time?.arriveBy]);
 
   const select = useCallback(
     (option: CommuteOption) => {
@@ -192,6 +217,22 @@ export function CommutePage() {
 
   const swap = () => setEnds({ from: toRef, to: fromRef }, false);
 
+  /**
+   * Ten minutes earlier than the current planning time, as a history entry so Back
+   * undoes it. Only when planning forwards: earlier than a deadline is a different
+   * question, and the picker answers it.
+   */
+  const earlier = () => {
+    const from = time ? new Date(time.when).getTime() : Date.now();
+    navigate({
+      pathname: location.pathname,
+      search: `?${new URLSearchParams({
+        ...Object.fromEntries(params),
+        when: new Date(from - EARLIER_MS).toISOString(),
+      }).toString()}`,
+    });
+  };
+
   const fromLabel = useRefLabel(fromRef, saved, positionDenied);
   const toLabel = useRefLabel(toRef, saved, positionDenied);
 
@@ -225,7 +266,7 @@ export function CommutePage() {
 
       <BottomSheet label="Resor härifrån" onHeightChange={setSheetHeight}>
         <div className="space-y-2 px-3 pb-4">
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-[var(--color-muted)]">
               {commute.isError
                 ? "Visar senaste svaret"
@@ -233,11 +274,24 @@ export function CommutePage() {
                   ? "Hämtar resor"
                   : `Uppdaterad för ${updatedSecondsAgo} s sedan`}
             </p>
-            {commute.data?.enumerated ? (
-              <span className="text-xs text-[var(--color-muted)]">
-                {options.length} resor
-              </span>
-            ) : null}
+            <div className="flex items-center gap-1">
+              {commute.data?.enumerated ? (
+                <span className="text-xs text-[var(--color-muted)]">
+                  {options.length} resor
+                </span>
+              ) : null}
+              {/* The only way the list changes: now, from where they are standing now. */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => commute.refetch()}
+                disabled={commute.isFetching}
+                aria-label="Uppdatera"
+              >
+                <RefreshCw className={cn(commute.isFetching && "animate-spin")} />
+              </Button>
+            </div>
           </div>
 
           {saved.length === 0 && !params.get("to") ? (
@@ -254,12 +308,6 @@ export function CommutePage() {
           {sameEnds ? (
             <p className="py-2 text-sm">
               Från och till är samma plats. Byt den ena för att se resor.
-            </p>
-          ) : null}
-
-          {needsPosition && positionDenied ? (
-            <p className="py-2 text-sm">
-              Ingen åtkomst till din position. Välj en plats i stället.
             </p>
           ) : null}
 
@@ -284,6 +332,19 @@ export function CommutePage() {
                 </li>
               ))}
             </ul>
+          ) : null}
+
+          {commute.isSuccess && !time?.arriveBy ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={earlier}
+              className="w-full"
+            >
+              <History />
+              Tidigare
+            </Button>
           ) : null}
 
           {options.length > 0 ? (

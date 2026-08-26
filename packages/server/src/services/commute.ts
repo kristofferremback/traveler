@@ -370,9 +370,13 @@ export function foldDrafts(
     };
   });
 
+  // Missed rows reach back twenty minutes, or to the planned time when the traveller
+  // deliberately asked about earlier than now: "what did I just miss" is the question
+  // that a planning time in the past is asking.
+  const missedSince = Math.min(pivot.at, reference - LOOKBACK_MS);
   const live = options.filter((o) => o.status !== "missed").sort((a, b) => a.score - b.score);
   const missed = options
-    .filter((o) => o.status === "missed" && ms(o.leaveAt) >= reference - LOOKBACK_MS)
+    .filter((o) => o.status === "missed" && ms(o.leaveAt) >= missedSince)
     .sort((a, b) => ms(b.leaveAt) - ms(a.leaveAt));
   if (live[0]) live[0].status = "recommended";
   return [...live, ...missed];
