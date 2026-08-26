@@ -186,6 +186,19 @@ describe("foldDrafts", () => {
     ]);
   });
 
+  test("planning from earlier than now keeps everything missed since then", () => {
+    const longGone = draft({ vehicleKey: "a", ourStop: jarlaberg, boardAt: T0 - min(35), alightAt: T0 - min(5) });
+    const gone = draft({ vehicleKey: "b", ourStop: jarlaberg, boardAt: T0 - min(25), alightAt: T0 + min(5) });
+    const next = draft({ vehicleKey: "c", ourStop: jarlaberg, boardAt: T0 + min(5), alightAt: T0 + min(30) });
+    const fromNow = foldDrafts([longGone, gone, next], "origin", settings, { at: T0, arriveBy: false }, T0);
+    expect(fromNow.map((o) => o.vehicleKey)).toEqual(["c"]);
+    const fromEarlier = foldDrafts([longGone, gone, next], "origin", settings, { at: T0 - min(30), arriveBy: false }, T0);
+    expect(fromEarlier.map((o) => [o.vehicleKey, o.status])).toEqual([
+      ["c", "recommended"],
+      ["b", "missed"],
+    ]);
+  });
+
   test("the transfer penalty ranks one bus above two at roughly the same time", () => {
     const oneBus = draft({ vehicleKey: "443:1", ourStop: jarlaberg, boardAt: T0 + min(5), alightAt: T0 + min(35) });
     const twoBuses = draft({
