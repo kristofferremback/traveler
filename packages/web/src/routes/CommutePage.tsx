@@ -220,12 +220,6 @@ export function CommutePage() {
   }, []);
 
   const [sheetHeight, setSheetHeight] = useState(PEEK_HEIGHT);
-  // The map keeps the trip above the sheet, but never gives away more than half its
-  // height to it -- a fit with padding taller than the container has nowhere to go.
-  const bottomInset = Math.min(
-    sheetHeight,
-    Math.round((typeof window === "undefined" ? 800 : window.innerHeight) * 0.4),
-  );
 
   /**
    * The picker is a history entry, so Back closes it.
@@ -287,7 +281,7 @@ export function CommutePage() {
         <TransitMap
           option={selected}
           vehicleTrip={vehicleTrip}
-          bottomInset={bottomInset}
+          bottomInset={sheetHeight}
           className="commute-map relative size-full"
         />
       </Suspense>
