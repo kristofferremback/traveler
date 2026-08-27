@@ -476,11 +476,17 @@ test.describe("the commute screen", () => {
   });
 
   const sheet = (page: Page) => page.getByRole("region", { name: "Resor härifrån" });
+  /** Nothing is fetched until asked: open the trip, then ask. */
+  const open = async (page: Page, url = trip) => {
+    await page.goto(url);
+    await expect(sheet(page)).toContainText("Inget sökt än");
+    await sheet(page).getByRole("button", { name: "Sök resor" }).click();
+  };
   const rows = (page: Page) =>
     sheet(page).locator("ul > li").filter({ hasText: "Framme" });
 
   test("shows ranked options between two saved places", async ({ page }) => {
-    await page.goto(trip);
+    await open(page);
 
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
     // Exactly one recommendation among the cards: two would be a contradiction, none
@@ -499,7 +505,7 @@ test.describe("the commute screen", () => {
       if (r.url().includes("/api/commute")) asked.push(r.url());
     });
 
-    await page.goto(trip);
+    await open(page);
     await expect(rows(page).nth(1)).toBeVisible({ timeout: 120_000 });
 
     const second = rows(page).nth(1).getByRole("button").first();
@@ -515,7 +521,7 @@ test.describe("the commute screen", () => {
   });
 
   test("says on the map which line to board, and when", async ({ page }) => {
-    await page.goto(trip);
+    await open(page);
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
     // The boarding callout carries the line and a clock time; the alighting one a time
     // and the stop name. Both live in the map, not the sheet.
@@ -589,7 +595,7 @@ test.describe("the commute screen", () => {
   });
 
   test("the sheet tucks to its handle and a tap brings it back", async ({ page }) => {
-    await page.goto(trip);
+    await open(page);
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
     const handle = sheet(page).getByRole("button", { name: /Visa fler resor/ });
     const box = (await handle.boundingBox())!;
@@ -607,12 +613,17 @@ test.describe("the commute screen", () => {
   });
 
   test("Tidigare moves the planning time back ten minutes and Back undoes it", async ({ page }) => {
-    await page.goto(trip);
+    await open(page);
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
     const before = Date.now();
 
+    const firstBefore = await rows(page).first().innerText();
+    const countBefore = await rows(page).count();
     await page.getByRole("button", { name: "Tidigare" }).click();
     await expect(page).toHaveURL(/when=/);
+    // Asking for earlier adds to the list; what was on screen stays on screen.
+    await expect(rows(page).filter({ hasText: firstBefore.split("\n")[0]! }).first()).toBeVisible();
+    await expect.poll(() => rows(page).count(), { timeout: 60_000 }).toBeGreaterThanOrEqual(countBefore);
     const when = new URL(page.url()).searchParams.get("when")!;
     const shift = before - new Date(when).getTime();
     expect(shift).toBeGreaterThanOrEqual(10 * 60_000 - 1000);
@@ -634,7 +645,7 @@ test.describe("the commute screen", () => {
       if (r.url().includes("/api/commute")) asked.push(decodeURIComponent(r.url()));
     });
 
-    await page.goto(`/?from=me&to=place:${homeId}`);
+    await open(page, `/?from=me&to=place:${homeId}`);
     await expect.poll(() => asked.some((u) => u.includes("from=59.3196,18.0722")), { timeout: 120_000 }).toBe(true);
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
 
@@ -653,7 +664,7 @@ test.describe("the commute screen", () => {
         body: JSON.stringify({ error: { code: "boom", message: "Kunde inte hämta resor." } }),
       }),
     );
-    await page.goto(trip);
+    await open(page);
 
     await expect(page.getByRole("button", { name: "Försök igen" })).toBeVisible();
     expect((await page.locator("body").innerText()).trim().length).toBeGreaterThan(20);
@@ -664,7 +675,7 @@ test.describe("the commute screen", () => {
     // cannot be reached at all, which is worth knowing on its own.
     for (const scheme of ["dark", "light"] as const) {
       await page.emulateMedia({ colorScheme: scheme });
-      await page.goto(trip);
+      await open(page);
       await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
       // The basemap tiles settle a beat after the rows do.
       await page.waitForTimeout(3000);

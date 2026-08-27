@@ -1,8 +1,9 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { CommuteOption, SavedPlace } from "@traveler/shared";
 import { api, ApiError } from "@/lib/api";
+import { formatTime } from "@/lib/format";
 import { BottomSheet, PEEK_HEIGHT } from "@/components/BottomSheet";
 import { CommuteCards } from "@/components/CommuteCards";
 import { CommuteHero } from "@/components/CommuteHero";
@@ -10,7 +11,7 @@ import { PlacePicker } from "@/components/PlacePicker";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
 import { TripControl } from "@/components/TripControl";
 import { Button } from "@/components/ui/button";
-import { History, RefreshCw } from "lucide-react";
+import { History, RefreshCw, Search } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -105,9 +106,20 @@ export function CommutePage() {
    * key: the key stays the refs the traveller chose, so a new fix on the next refresh
    * replaces the rows in place instead of emptying the list to skeletons first.
    */
+  /**
+   * Nothing is fetched until the traveller asks.
+   *
+   * Opening the app is not a question; "Sök resor", Uppdatera, Tidigare, or changing
+   * an end or the time is. Position is read as part of the fetch, so a phone taken out
+   * of a pocket does not fire a location request before anyone tapped anything.
+   */
+  const [armed, setArmed] = useState(false);
+
   const commute = useQuery({
     queryKey: ["commute", fromRef, toRef, time?.when ?? null, time?.arriveBy ?? false],
-    enabled: Boolean(fromRef && toRef) && !sameEnds,
+    enabled: armed && Boolean(fromRef && toRef) && !sameEnds,
+    // A new time keeps the old answer on screen until the new one has arrived.
+    placeholderData: keepPreviousData,
     queryFn: async ({ signal }) => {
       let here: Position | null = null;
       if (needsPosition) {
@@ -142,17 +154,41 @@ export function CommutePage() {
     refetchOnReconnect: false,
   });
 
-  const options = useMemo(() => commute.data?.options ?? [], [commute.data]);
+  /**
+   * Tidigare adds to the list rather than replacing it.
+   *
+   * Each step back is a fresh answer from the engine, planned from ten minutes earlier:
+   * it holds what was missed since then and drops the far end of the horizon. The
+   * traveller pressed it to see more, not to lose the trips already on screen, so the
+   * answers are merged: the newest response leads, in its own order, and anything only
+   * an earlier response knew is kept after it. Missed options stay last. A new pair of
+   * ends or a switch to a deadline starts over.
+   */
+  const seen = useRef<{ key: string; options: CommuteOption[] }>({ key: "", options: [] });
+  const options = useMemo(() => {
+    const key = `${fromRef}|${toRef}|${time?.arriveBy ? "arr" : "dep"}`;
+    const fresh = commute.data?.options ?? [];
+    if (seen.current.key !== key) seen.current = { key, options: [] };
+    if (!commute.data) return seen.current.options;
+    const ids = new Set(fresh.map((o) => o.id));
+    const kept = seen.current.options.filter((o) => !ids.has(o.id));
+    const merged = [...fresh, ...kept];
+    const live = merged.filter((o) => o.status !== "missed");
+    const missed = merged.filter((o) => o.status === "missed");
+    seen.current = { key, options: [...live, ...missed] };
+    return seen.current.options;
+  }, [commute.data, fromRef, toRef, time?.arriveBy]);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected: CommuteOption | null =
     options.find((o) => o.id === selectedId) ?? options[0] ?? null;
 
-  // A new pair of places or a new time is a new list; keeping the old selection would
-  // draw a trip that is no longer on screen.
+  // A new pair of places is a new list; keeping the old selection would draw a trip
+  // that is no longer on screen. A new time keeps it: the merged list still has it.
   useEffect(() => {
     setSelectedId(null);
     paths.current = "recommended";
-  }, [fromRef, toRef, time?.when, time?.arriveBy]);
+  }, [fromRef, toRef, time?.arriveBy]);
 
   const select = useCallback(
     (option: CommuteOption) => {
@@ -201,6 +237,7 @@ export function CommutePage() {
       if (value) search.set(key, value);
       else search.delete(key);
     }
+    setArmed(true);
     if (fromPicker) {
       navigate(
         { pathname: location.pathname, search: `?${search.toString()}` },
@@ -224,6 +261,7 @@ export function CommutePage() {
    * question, and the picker answers it.
    */
   const earlier = () => {
+    setArmed(true);
     const from = time ? new Date(time.when).getTime() : Date.now();
     navigate({
       pathname: location.pathname,
@@ -267,11 +305,13 @@ export function CommutePage() {
         <div className="space-y-2 px-3 pb-4">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-[var(--color-muted)]">
-              {commute.isError
-                ? "Visar senaste svaret"
-                : updatedSecondsAgo === null
-                  ? "Hämtar resor"
-                  : `Uppdaterad för ${updatedSecondsAgo} s sedan`}
+              {!armed
+                ? "Inget sökt än"
+                : commute.isError
+                  ? "Visar senaste svaret"
+                  : updatedSecondsAgo === null
+                    ? "Hämtar resor"
+                    : `Uppdaterad för ${updatedSecondsAgo} s sedan`}
             </p>
             <div className="flex items-center gap-1">
               {commute.data?.enumerated ? (
@@ -284,7 +324,7 @@ export function CommutePage() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                onClick={() => commute.refetch()}
+                onClick={() => (armed ? commute.refetch() : setArmed(true))}
                 disabled={commute.isFetching}
                 aria-label="Uppdatera"
               >
@@ -323,7 +363,20 @@ export function CommutePage() {
             </div>
           ) : null}
 
-          {commute.isPending && commute.fetchStatus === "fetching" ? (
+          {!armed && fromRef && toRef && !sameEnds ? (
+            <div className="space-y-3 py-2">
+              <p className="text-[15px]">
+                {fromLabel} till {toLabel}
+                {time ? (time.arriveBy ? `, framme senast ${formatTime(time.when)}` : `, avgång ${formatTime(time.when)}`) : ""}.
+              </p>
+              <Button type="button" size="lg" onClick={() => setArmed(true)} className="w-full rounded-full">
+                <Search />
+                Sök resor
+              </Button>
+            </div>
+          ) : null}
+
+          {commute.isPending && commute.fetchStatus === "fetching" && options.length === 0 ? (
             <ul className="space-y-2" aria-busy="true" aria-label="Söker resor">
               {[0, 1, 2].map((i) => (
                 <li key={i}>
