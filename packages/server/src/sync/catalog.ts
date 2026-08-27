@@ -450,7 +450,7 @@ function rebuildSearchIndex(): number {
 // Orchestration
 // ---------------------------------------------------------------------------
 
-async function runStep(
+export async function runStep(
   entity: string,
   work: (now: string) => Promise<SyncCounts> | SyncCounts,
 ): Promise<SyncOutcome> {

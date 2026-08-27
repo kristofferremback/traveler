@@ -4,6 +4,7 @@ import { describe } from "../lib/errors.ts";
 import { sweepCache } from "../db/cache.ts";
 import { catalogCounts } from "../db/catalog.ts";
 import { lastSync, syncCatalog } from "./catalog.ts";
+import { gtfsSyncReason, syncGtfs } from "./gtfs.ts";
 
 const log = logger("scheduler");
 
@@ -22,6 +23,16 @@ export async function runSyncOnce(reason: string): Promise<boolean> {
     log.info(`catalog sync starting (${reason})`);
     await syncCatalog();
     log.info(`catalog sync finished in ${Math.round((Date.now() - started) / 1000)}s`);
+    // The static GTFS join rides along, after the catalog and never in its way: a
+    // 403 here means a Trafiklab product is missing, not that stops are stale.
+    const gtfsReason = gtfsSyncReason(reason === "scheduled");
+    if (gtfsReason) {
+      try {
+        await syncGtfs();
+      } catch (err) {
+        log.error(`gtfs sync failed (${gtfsReason}): ${describe(err)}`);
+      }
+    }
     return true;
   } catch (err) {
     // A failed sync is survivable: the previous catalog is still in place and every
@@ -47,6 +58,7 @@ export function isSyncRunning() {
 function bootSyncReason(): string | null {
   if (!env.CATALOG_SYNC_ON_BOOT) return null;
   if (catalogCounts().sites === 0) return "empty catalog on boot";
+  if (gtfsSyncReason(false)) return `gtfs: ${gtfsSyncReason(false)}`;
 
   const last = lastSync("sites");
   if (!last || last.status !== "ok" || !last.finished_at) {

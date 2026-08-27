@@ -10,6 +10,7 @@ import { CommuteHero } from "@/components/CommuteHero";
 import { PlacePicker } from "@/components/PlacePicker";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
 import { TripControl } from "@/components/TripControl";
+import type { VehicleTrip } from "@/components/TransitMap";
 import { Button } from "@/components/ui/button";
 import { History, RefreshCw, Search } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -202,13 +203,14 @@ export function CommutePage() {
     [commute],
   );
 
-  const selectedLines = useMemo(
-    () =>
-      selected
-        ? [...new Set(selected.journey.legs.map((leg) => leg.line?.designation).filter((d): d is string => Boolean(d)))]
-        : null,
-    [selected],
-  );
+  /** The selected trip's first ride, in the terms the vehicle feed can find it by. */
+  const vehicleTrip = useMemo((): VehicleTrip | null => {
+    const leg = selected?.journey.legs.find((l) => l.mode !== "WALK");
+    const line = leg?.line?.designation;
+    const boardAt = leg?.origin.scheduled;
+    if (!leg || !leg.tripId || !line || !boardAt || leg.origin.lat === null || leg.origin.lon === null) return null;
+    return { tripId: leg.tripId, line, boardAt, lat: leg.origin.lat, lon: leg.origin.lon };
+  }, [selected]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -292,7 +294,7 @@ export function CommutePage() {
       <Suspense fallback={<div className="size-full bg-[var(--color-surface-2)]" />}>
         <TransitMap
           option={selected}
-          vehicleLines={selectedLines}
+          vehicleTrip={vehicleTrip}
           bottomInset={bottomInset}
           className="commute-map relative size-full"
         />

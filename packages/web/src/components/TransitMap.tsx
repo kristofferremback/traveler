@@ -307,11 +307,27 @@ function calloutElement(c: Callout): HTMLElement {
   return el;
 }
 
-/** A vehicle on one of the trip's lines: the number in the line's colour, pointing its way. */
-function vehiclePill(line: string, color: string, bearing: number | null): HTMLElement {
+/** What names the departure whose vehicle the map should show. */
+export type VehicleTrip = {
+  /** The planner's trip id for the leg; the server reads the line gid off it. */
+  tripId: string;
+  line: string;
+  /** Scheduled departure at the boarding stop, ISO. */
+  boardAt: string;
+  lat: number;
+  lon: number;
+};
+
+/**
+ * A vehicle on the trip's line: the number in the line's colour, pointing its way. The
+ * traveller's own vehicle, once the server knows which it is, is the larger one.
+ */
+function vehiclePill(line: string, color: string, bearing: number | null, exact: boolean): HTMLElement {
   const el = document.createElement("span");
-  el.className =
-    "vehicle pointer-events-none flex items-center gap-0.5 rounded-full border-2 border-[var(--color-bg)] px-1.5 py-0.5 text-[11px] font-bold text-white shadow";
+  el.className = cn(
+    "vehicle pointer-events-none flex items-center gap-0.5 rounded-full border-2 border-[var(--color-bg)] font-bold text-white shadow",
+    exact ? "vehicle-exact px-2.5 py-1 text-[14px] shadow-lg" : "px-1.5 py-0.5 text-[11px]",
+  );
   el.style.backgroundColor = color;
   el.textContent = line;
   if (bearing !== null) {
@@ -374,7 +390,7 @@ export function TransitMap({
   option,
   neighbourhood,
   showVehicles = false,
-  vehicleLines = null,
+  vehicleTrip = null,
   bottomInset = 0,
   className,
 }: {
@@ -385,11 +401,13 @@ export function TransitMap({
   neighbourhood?: Neighbourhood | null;
   showVehicles?: boolean;
   /**
-   * Line designations whose live vehicles to draw, as pills carrying the number: the
-   * selected trip's lines, so the traveller can see the 443 coming. Nothing is drawn
-   * when the feed is unavailable; the map does not need a notice for that.
+   * The departure whose vehicle to draw: the selected trip's first ride, so the
+   * traveller can see their 443 coming. The server answers with that one vehicle when
+   * it can tell which it is, and with every vehicle on the line otherwise; the pill
+   * says which by its size. Nothing is drawn when the feed is unavailable; the map does
+   * not need a notice for that.
    */
-  vehicleLines?: string[] | null;
+  vehicleTrip?: VehicleTrip | null;
   /** Pixels at the bottom covered by something else, such as the commute sheet. */
   bottomInset?: number;
   className?: string;
@@ -649,31 +667,48 @@ export function TransitMap({
     return detach;
   }, [neighbourhood, ready]);
 
-  const wantsVehicles = showVehicles || (vehicleLines?.length ?? 0) > 0;
+  const wantsVehicles = showVehicles || vehicleTrip !== null;
   const vehicleUrl = useMemo(
-    () => (wantsVehicles && bbox ? streams.vehicles({ bbox }) : null),
-    [wantsVehicles, bbox],
+    () =>
+      wantsVehicles && bbox
+        ? streams.vehicles({
+            bbox,
+            ...(vehicleTrip
+              ? {
+                  line: vehicleTrip.line,
+                  trip: vehicleTrip.tripId,
+                  boardAt: vehicleTrip.boardAt,
+                  boardLat: vehicleTrip.lat,
+                  boardLon: vehicleTrip.lon,
+                }
+              : {}),
+          })
+        : null,
+    [wantsVehicles, bbox, vehicleTrip],
   );
   const vehicles = useStream<VehiclesResponse>(vehicleUrl, "vehicles");
 
-  // The trip's own vehicles, as pills with the line number, so "the 443 is two stops
-  // away" is something the map says. The feed is by area, so the lines are picked here.
+  // The departure's vehicle, as a pill with the line number, so "the 443 is two stops
+  // away" is something the map says. The server already narrowed the feed to the one
+  // vehicle or to the line; the pill's size tells the two apart.
   useEffect(() => {
     const instance = map.current;
     if (!instance || !ready) return;
     for (const marker of vehicleMarkers.current) marker.remove();
     vehicleMarkers.current = [];
-    const lines = new Set(vehicleLines ?? []);
-    if (lines.size === 0) return;
+    if (!vehicleTrip) return;
+    const exact = vehicles.data?.match === "trip";
     for (const v of vehicles.data?.vehicles ?? []) {
-      if (!v.line || !lines.has(v.line)) continue;
+      // The server narrows the feed to the departure or its line; this is the belt to
+      // that brace, so a feed that widens can never flood the map again.
+      if (!v.line || (!exact && v.line !== vehicleTrip.line)) continue;
       vehicleMarkers.current.push(
-        new maplibregl.Marker({ element: vehiclePill(v.line, modeColor(v.mode, v.line), v.bearing) })
+        new maplibregl.Marker({ element: vehiclePill(v.line, modeColor(v.mode, v.line), v.bearing, exact) })
           .setLngLat([v.lon, v.lat])
           .addTo(instance),
       );
     }
-  }, [vehicles.data, vehicleLines, ready]);
+  }, [vehicles.data, vehicleTrip, ready]);
 
   // Every vehicle in view, as dots: only for a screen that asked for all of them. The
   // commute map opens the same stream for its trip's lines and must not get the lot.

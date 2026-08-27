@@ -199,6 +199,8 @@ export const VehiclePosition = z.object({
   line: z.string().nullable().default(null),
   tripId: z.string().nullable().default(null),
   destination: z.string().nullable().default(null),
+  /** GTFS direction_id, when the static join knows the trip. */
+  directionId: z.number().int().nullable().default(null),
   timestamp: Instant.nullable().default(null),
 });
 export type VehiclePosition = z.infer<typeof VehiclePosition>;

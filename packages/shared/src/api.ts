@@ -162,6 +162,17 @@ export const VehiclesQuery = z.object({
     .transform((s) => (s ? s.split(",").filter(Boolean) : undefined))
     .pipe(z.array(TransportMode).optional()),
   line: z.string().optional(),
+  /**
+   * Name one departure: the planner's trip id for the leg (`<line gid>:<trip code>:<day>`,
+   * of which only the line gid is used), the scheduled departure at the boarding stop
+   * (ISO), and where that stop is. The service looks for the trip on that line whose
+   * timetable has that departure there and answers its vehicle with `match: "trip"`;
+   * failing that, every vehicle on `line` (`"line"`).
+   */
+  trip: z.string().optional(),
+  boardAt: z.string().optional(),
+  boardLat: z.coerce.number().optional(),
+  boardLon: z.coerce.number().optional(),
 });
 export type VehiclesQuery = z.infer<typeof VehiclesQuery>;
 
@@ -171,6 +182,8 @@ export const VehiclesResponse = z.object({
   /** False when TRAFIKLAB_GTFS_RT_KEY is unset -- the UI says so instead of showing an empty map. */
   available: z.boolean(),
   reason: z.string().nullable().default(null),
+  /** How the vehicles were chosen when a departure was named; `none` otherwise. */
+  match: z.enum(["trip", "line", "none"]).default("none"),
 });
 export type VehiclesResponse = z.infer<typeof VehiclesResponse>;
 

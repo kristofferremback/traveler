@@ -534,21 +534,24 @@ test.describe("the commute screen", () => {
     await expect(callouts.filter({ hasText: designation }).first()).toBeVisible();
   });
 
-  test("draws live vehicles for the selected trip's lines only", async ({ page }) => {
-    // The local server has no Trafiklab key, so the stream is played back: one vehicle
-    // on the recommended line and one on a line the trip does not ride.
+  test("draws the departure's own vehicle when the server knows it, else the line", async ({ page }) => {
+    // The local server has no Trafiklab key, so the stream is played back. The server
+    // decides the match; the map shows the one vehicle large, or the line's small.
     let line = "";
+    let match: "trip" | "line" = "line";
+    const asked: string[] = [];
     await page.route("**/api/vehicles/stream*", (route) => {
+      asked.push(decodeURIComponent(route.request().url()));
       const vehicle = (id: string, l: string, lat = 59.31, lon = 18.12) =>
-        `{"id":"${id}","lat":${lat},"lon":${lon},"bearing":90,"speed":null,"mode":"BUS","line":"${l}","tripId":null,"destination":null,"timestamp":null}`;
-      // A crowd on another line, the way a real feed looks in the rush hour.
+        `{"id":"${id}","lat":${lat},"lon":${lon},"bearing":90,"speed":null,"mode":"BUS","line":"${l}","tripId":"t-${id}","destination":null,"directionId":null,"timestamp":null}`;
       const crowd = Array.from({ length: 150 }, (_, i) =>
         vehicle(`c${i}`, "999", 59.28 + (i % 15) * 0.006, 18.02 + Math.floor(i / 15) * 0.014),
       );
+      const mine = match === "trip" ? [vehicle("a", line)] : [vehicle("a", line), vehicle("b", line, 59.32, 18.10)];
       route.fulfill({
         status: 200,
         contentType: "text/event-stream",
-        body: `event: vehicles\ndata: {"vehicles":[${[vehicle("a", line), ...crowd].join(",")}],"fetchedAt":"2026-01-01T00:00:00Z","available":true,"reason":null}\n\n`,
+        body: `event: vehicles\ndata: {"vehicles":[${[...mine, ...crowd].join(",")}],"fetchedAt":"2026-01-01T00:00:00Z","available":true,"reason":null,"match":"${match}"}\n\n`,
       });
     });
     await open(page);
@@ -556,12 +559,19 @@ test.describe("the commute screen", () => {
     const badge = await rows(page).first().locator("[style*='background-color']").first().innerText();
     line = badge.trim().split("\n")[0]!;
 
-    // The pill is the marker element itself.
+    // The stream is asked with the departure, not just the area.
+    await expect.poll(() => asked.some((u) => u.includes("trip=") && u.includes("boardAt=") && u.includes(`line=${line}`))).toBe(true);
+
+    // Line match: both vehicles on the line as small pills, none of the crowd.
     const pills = page.locator(".maplibregl-marker.vehicle");
-    await expect(pills.filter({ hasText: line }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(pills.filter({ hasText: line })).toHaveCount(2, { timeout: 30_000 });
     await expect(pills.filter({ hasText: "999" })).toHaveCount(0);
-    // For a human: the crowd on line 999 must not appear as dots either.
-    await page.waitForTimeout(1500);
+    await expect(page.locator(".vehicle-exact")).toHaveCount(0);
+
+    // Trip match: the one vehicle, large.
+    match = "trip";
+    await expect(page.locator(".vehicle-exact").filter({ hasText: line })).toHaveCount(1, { timeout: 30_000 });
+    await page.waitForTimeout(1000);
     await page.screenshot({ path: ".e2e/explore/commute-vehicles.png" });
   });
 

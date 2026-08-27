@@ -278,4 +278,24 @@ export const MIGRATIONS: readonly string[] = [
     updated_at                TEXT NOT NULL
   );
   `,
+
+  // 9 -- SL's static GTFS routes and trips, so a realtime vehicle (which carries only a
+  //      trip id) can be named by line and mode. Replaced wholesale on each sync; no
+  //      history, because yesterday's trip ids are of no use to anyone.
+  `
+  CREATE TABLE gtfs_routes (
+    route_id    TEXT PRIMARY KEY,
+    short_name  TEXT NOT NULL,
+    route_type  INTEGER NOT NULL,
+    agency_id   TEXT
+  );
+  CREATE TABLE gtfs_trips (
+    trip_id       TEXT PRIMARY KEY,
+    route_id      TEXT NOT NULL,
+    headsign      TEXT,
+    direction_id  INTEGER,
+    service_id    TEXT
+  );
+  CREATE INDEX gtfs_trips_route_idx ON gtfs_trips(route_id);
+  `,
 ];
