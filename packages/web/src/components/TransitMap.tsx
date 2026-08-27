@@ -11,6 +11,8 @@ import type {
 import { streams } from "@/lib/api";
 import { useStream } from "@/hooks/useStream";
 import { modeColor } from "@/lib/modes";
+import { formatTime } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 /**
@@ -230,6 +232,80 @@ function placeMarker(): HTMLElement {
   return el;
 }
 
+/**
+ * What happens at a stop, said on the map where it happens.
+ *
+ * The boarding stop gets the line, the departure time and the name; a change gets the
+ * next line and its time; the alighting stop gets the arrival. The boarding callout is
+ * the emphasised one because it is the next thing the traveller does. DOM markers for
+ * the same reason as the minute labels: no glyphs to depend on, theme tokens for free.
+ */
+type Callout = {
+  at: [number, number];
+  time: string | null;
+  name: string | null;
+  line: { color: string; designation: string } | null;
+  primary: boolean;
+};
+
+function calloutsOf(journey: Journey | null): Callout[] {
+  if (!journey) return [];
+  const rides = journey.legs.filter((leg) => leg.mode !== "WALK");
+  const out: Callout[] = [];
+  rides.forEach((leg, i) => {
+    const { lat, lon } = leg.origin;
+    if (lat === null || lon === null) return;
+    out.push({
+      at: [lon, lat],
+      time: leg.origin.expected ?? leg.origin.scheduled,
+      name: i === 0 ? leg.origin.name : null,
+      line: { color: modeColor(leg.mode, leg.line?.designation), designation: leg.line?.designation ?? "" },
+      primary: i === 0,
+    });
+  });
+  const last = rides.at(-1);
+  if (last && last.destination.lat !== null && last.destination.lon !== null) {
+    out.push({
+      at: [last.destination.lon, last.destination.lat],
+      time: last.destination.expected ?? last.destination.scheduled,
+      name: last.destination.name,
+      line: null,
+      primary: false,
+    });
+  }
+  return out;
+}
+
+function calloutElement(c: Callout): HTMLElement {
+  const el = document.createElement("span");
+  el.className = cn(
+    "pointer-events-none flex items-center gap-1.5 whitespace-nowrap rounded-xl border px-2 py-1 text-[13px] shadow-md",
+    c.primary
+      ? "border-transparent bg-[var(--color-fg)] text-[var(--color-bg)]"
+      : "border-[var(--color-border)] bg-[var(--color-surface)]/95 text-[var(--color-fg)] backdrop-blur",
+  );
+  if (c.line) {
+    const badge = document.createElement("span");
+    badge.className = "rounded-md px-1.5 py-0.5 text-xs font-bold text-white";
+    badge.style.backgroundColor = c.line.color;
+    badge.textContent = c.line.designation;
+    el.appendChild(badge);
+  }
+  if (c.time) {
+    const time = document.createElement("span");
+    time.className = "font-semibold tabular-nums";
+    time.textContent = formatTime(c.time);
+    el.appendChild(time);
+  }
+  if (c.name) {
+    const name = document.createElement("span");
+    name.className = c.primary ? "opacity-75" : "text-[var(--color-muted)]";
+    name.textContent = c.name;
+    el.appendChild(name);
+  }
+  return el;
+}
+
 /** Where the trip ends: a ring rather than a dot, so the two ends never read alike. */
 function destinationMarker(): HTMLElement {
   const el = document.createElement("span");
@@ -297,6 +373,7 @@ export function TransitMap({
   const map = useRef<MapLibreMap | null>(null);
   const hoodMarkers = useRef<maplibregl.Marker[]>([]);
   const doorMarkers = useRef<maplibregl.Marker[]>([]);
+  const calloutMarkers = useRef<maplibregl.Marker[]>([]);
   const [ready, setReady] = useState(false);
   const [bbox, setBbox] = useState<string | null>(null);
   const [styleError, setStyleError] = useState(false);
@@ -440,17 +517,44 @@ export function TransitMap({
       );
     }
 
+    /**
+     * Callouts lean away from the edge they are near: one at the right of the screen
+     * hangs to the left of its stop, so the name is on screen rather than clipped. A
+     * marker's anchor is fixed at creation, so they are rebuilt after every move.
+     */
+    const callouts = calloutsOf(drawn);
+    const render = () => {
+      for (const marker of calloutMarkers.current) marker.remove();
+      calloutMarkers.current = [];
+      const width = instance.getContainer().clientWidth;
+      for (const c of callouts) {
+        const x = instance.project(c.at).x;
+        const anchor = x > width * 0.62 ? "bottom-right" : x < width * 0.38 ? "bottom-left" : "bottom";
+        calloutMarkers.current.push(
+          new maplibregl.Marker({ element: calloutElement(c), anchor, offset: [0, -10] })
+            .setLngLat(c.at)
+            .addTo(instance),
+        );
+      }
+    };
+    render();
+    instance.on("moveend", render);
+
     const bounds = option ? boundsOfOption(option) : drawn ? boundsOf(drawn) : null;
     if (bounds) {
       instance.fitBounds(bounds, {
         // The sheet covers the bottom of the map, so the padding has to keep the trip
-        // above it rather than centring it under the rows.
-        padding: { top: 88, bottom: 48 + insetRef.current, left: 32, right: 32 },
+        // above it rather than centring it under the rows; the sides leave room for a
+        // callout to hang off its stop.
+        padding: { top: 120, bottom: 48 + insetRef.current, left: 40, right: 40 },
         maxZoom: 15,
         // Respect a reduced-motion preference rather than flying the camera.
         animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       });
     }
+    return () => {
+      instance.off("moveend", render);
+    };
   }, [drawn, option, ready]);
 
   useEffect(() => {

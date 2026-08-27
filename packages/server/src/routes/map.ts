@@ -43,8 +43,8 @@ function pmtilesAvailable(): string | null {
 type Theme = "dark" | "light";
 
 const OPENFREEMAP_STYLE: Record<Theme, string> = {
-  dark: "https://tiles.openfreemap.org/styles/dark",
-  light: "https://tiles.openfreemap.org/styles/positron",
+  dark: "https://tiles.openfreemap.org/styles/fiord",
+  light: "https://tiles.openfreemap.org/styles/liberty",
 };
 
 /** Their styles change about never, and a style fetch is on the critical path of a map. */
