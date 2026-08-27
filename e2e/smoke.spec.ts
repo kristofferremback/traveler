@@ -539,12 +539,16 @@ test.describe("the commute screen", () => {
     // on the recommended line and one on a line the trip does not ride.
     let line = "";
     await page.route("**/api/vehicles/stream*", (route) => {
-      const vehicle = (id: string, l: string) =>
-        `{"id":"${id}","lat":59.31,"lon":18.12,"bearing":90,"speed":null,"mode":"BUS","line":"${l}","tripId":null,"destination":null,"timestamp":null}`;
+      const vehicle = (id: string, l: string, lat = 59.31, lon = 18.12) =>
+        `{"id":"${id}","lat":${lat},"lon":${lon},"bearing":90,"speed":null,"mode":"BUS","line":"${l}","tripId":null,"destination":null,"timestamp":null}`;
+      // A crowd on another line, the way a real feed looks in the rush hour.
+      const crowd = Array.from({ length: 150 }, (_, i) =>
+        vehicle(`c${i}`, "999", 59.28 + (i % 15) * 0.006, 18.02 + Math.floor(i / 15) * 0.014),
+      );
       route.fulfill({
         status: 200,
         contentType: "text/event-stream",
-        body: `event: vehicles\ndata: {"vehicles":[${vehicle("a", line)},${vehicle("b", "999")}],"fetchedAt":"2026-01-01T00:00:00Z","available":true,"reason":null}\n\n`,
+        body: `event: vehicles\ndata: {"vehicles":[${[vehicle("a", line), ...crowd].join(",")}],"fetchedAt":"2026-01-01T00:00:00Z","available":true,"reason":null}\n\n`,
       });
     });
     await open(page);
@@ -556,6 +560,9 @@ test.describe("the commute screen", () => {
     const pills = page.locator(".maplibregl-marker.vehicle");
     await expect(pills.filter({ hasText: line }).first()).toBeVisible({ timeout: 30_000 });
     await expect(pills.filter({ hasText: "999" })).toHaveCount(0);
+    // For a human: the crowd on line 999 must not appear as dots either.
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: ".e2e/explore/commute-vehicles.png" });
   });
 
   test("keeps from and to in the URL and swaps them", async ({ page }) => {
