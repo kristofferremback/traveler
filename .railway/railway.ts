@@ -37,6 +37,8 @@ export default defineRailway(() => {
       AUTH_BASE_URL: preserve(),
       GOOGLE_CLIENT_ID: preserve(),
       GOOGLE_CLIENT_SECRET: preserve(),
+    TRAFIKLAB_GTFS_RT_KEY: preserve(),
+    TRAFIKLAB_GTFS_STATIC_KEY: preserve(),
     },
     volumeMounts: {
       "/data": data,

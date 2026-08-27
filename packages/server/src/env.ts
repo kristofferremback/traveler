@@ -17,6 +17,16 @@ const Env = z.object({
     .trim()
     .optional()
     .transform((v) => (v ? v : undefined)),
+  /**
+   * The static GTFS zip (routes and trips) is a separate Trafiklab product from the
+   * realtime feeds, and a key without it answers 403. Falls back to the realtime key
+   * for a project that has both on one key.
+   */
+  TRAFIKLAB_GTFS_STATIC_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v ? v : undefined)),
   VEHICLE_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).default(4000),
   CATALOG_SYNC_INTERVAL_MS: z.coerce
     .number()

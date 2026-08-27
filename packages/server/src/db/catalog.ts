@@ -63,6 +63,15 @@ export function getSite(id: number): SiteRow | null {
   return siteById.get(id) ?? null;
 }
 
+const stopPointByGidQuery = db.query<{ lat: number | null; lon: number | null }, [string]>(
+  `SELECT lat, lon FROM stop_points WHERE gid = ?1 AND removed_at IS NULL`,
+);
+
+/** Where a stop point is, by the gid the GTFS feeds use for it (9022…). */
+export function stopPointByGid(gid: string): { lat: number | null; lon: number | null } | null {
+  return stopPointByGidQuery.get(gid) ?? null;
+}
+
 export function getSiteByGid(gid: string): SiteRow | null {
   return siteByGid.get(gid) ?? null;
 }

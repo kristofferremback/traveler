@@ -196,6 +196,13 @@ Without the key every other feature works and the map says why the vehicles are 
 Note the free Bronze tier allows 30 000 calls a month, which at any useful interval is
 about a day of one person watching a map. Silver is 2 000 000.
 
+`TRAFIKLAB_GTFS_STATIC_KEY` is the same project's key for the static GTFS zip ("GTFS
+Regional Static", a separate product; a key without it answers 403). The server pulls
+`routes.txt` and `trips.txt` from it once a day, which is what names a live vehicle by
+line and mode (SL's realtime feed carries only a trip id) and lets the commute map pick
+out the vehicle of the departure you chose, via the TripUpdates feed. Unset, it falls
+back to the realtime key; without either, vehicles are simply not drawn.
+
 `ADMIN_TOKEN` enables `POST /api/catalog/sync`. Unset, the route is not registered,
 which is the right default for a public URL: it is a ten-megabyte download and a
 rewrite of three tables.
