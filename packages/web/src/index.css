@@ -21,7 +21,11 @@
   /* Line colours live in lib/modes.ts, not here: MapLibre cannot read CSS variables,
      and one source of truth beats two that can drift. */
 
-  --radius-card: 0.875rem;
+  --radius-card: 1.125rem;
+  --radius-sheet: 1.375rem;
+  /* Floating surfaces over the map carry one soft shadow; content inside them none. */
+  --shadow-float: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-sheet: 0 -8px 28px rgba(0, 0, 0, 0.35);
 }
 
 :root {
@@ -38,6 +42,8 @@
     --color-fg: oklch(0.22 0.02 260);
     --color-muted: oklch(0.50 0.02 260);
     --color-accent: oklch(0.52 0.17 240);
+    --shadow-float: 0 6px 20px rgba(0, 0, 0, 0.14);
+    --shadow-sheet: 0 -8px 28px rgba(0, 0, 0, 0.14);
   }
 }
 

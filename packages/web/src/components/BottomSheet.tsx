@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils";
 
 /**
- * The whole first row peeks over the fold, which is the point of the screen: when to
- * leave, on what, and when you land, without touching anything.
+ * The hero peeks over the fold, which is the point of the screen: when to leave, on
+ * what, and when you land, without touching anything.
  */
-export const PEEK_HEIGHT = 188;
+export const PEEK_HEIGHT = 236;
+/** Only the handle: the map is as full-screen as it gets while the app keeps its bar. */
+const TUCKED_HEIGHT = 30;
 /** Chips and the map's controls stay reachable at full height: this much map stays uncovered. */
 const TOP_GAP = 132;
 /**
@@ -15,11 +17,12 @@ const TOP_GAP = 132;
  */
 const TAB_BAR = 56 + 12;
 
-export type Snap = "peek" | "half" | "full";
+export type Snap = "tucked" | "peek" | "half" | "full";
 
 function snapHeights(viewport: number): Record<Snap, number> {
   const usable = viewport - TAB_BAR;
   return {
+    tucked: TUCKED_HEIGHT,
     peek: PEEK_HEIGHT,
     half: Math.round(usable * 0.5),
     full: Math.max(Math.round(usable * 0.5), usable - TOP_GAP),
@@ -92,7 +95,7 @@ export function BottomSheet({
     const delta = state.startY - e.clientY;
     if (Math.abs(delta) > 6) state.moved = true;
     const heights = snapHeights(window.innerHeight);
-    report(Math.min(heights.full, Math.max(heights.peek, state.startHeight + delta)));
+    report(Math.min(heights.full, Math.max(heights.tucked, state.startHeight + delta)));
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -113,8 +116,10 @@ export function BottomSheet({
       draggedRef.current = false;
       return;
     }
+    // A tap from tucked brings the sheet back; otherwise it climbs and wraps. Tucking
+    // is a drag, never a tap, so a tap can never make the list vanish by surprise.
     const order: Snap[] = ["peek", "half", "full"];
-    const next = order[(order.indexOf(snap) + 1) % order.length]!;
+    const next = snap === "tucked" ? "peek" : order[(order.indexOf(snap) + 1) % order.length]!;
     setSnap(next);
     report(snapHeights(window.innerHeight)[next]);
   };
@@ -140,7 +145,7 @@ export function BottomSheet({
       aria-label={label}
       style={{ height }}
       className={cn(
-        "pointer-events-auto fixed inset-x-0 bottom-[calc(3.5rem+max(0.75rem,env(safe-area-inset-bottom,0px)))] z-20 flex flex-col rounded-t-[var(--radius-card)] border-t border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_-8px_24px_rgba(0,0,0,0.25)]",
+        "pointer-events-auto fixed inset-x-0 bottom-[calc(3.5rem+max(0.75rem,env(safe-area-inset-bottom,0px)))] z-20 flex flex-col rounded-t-[var(--radius-sheet)] bg-[var(--color-surface)]/92 shadow-[var(--shadow-sheet)] backdrop-blur-xl",
         !dragging && !reduceMotion && "transition-[height] duration-200",
       )}
     >
@@ -152,16 +157,16 @@ export function BottomSheet({
         onPointerCancel={onPointerUp}
         onClick={cycle}
         aria-label={
-          snap === "full" ? "Fäll ihop listan" : "Visa fler resor"
+          snap === "tucked" ? "Visa resor" : snap === "full" ? "Fäll ihop listan" : "Visa fler resor"
         }
-        className="flex min-h-11 w-full shrink-0 touch-none items-center justify-center"
+        className="flex h-[30px] w-full shrink-0 touch-none items-center justify-center"
       >
         <span
-          className="block h-1.5 w-10 rounded-full bg-[var(--color-border)]"
+          className="block h-1.5 w-10 rounded-full bg-[var(--color-muted)]/45"
           aria-hidden
         />
       </button>
-      <div className={cn("min-h-0 flex-1", snap === "peek" ? "overflow-hidden" : "overflow-y-auto")}>
+      <div className={cn("min-h-0 flex-1", snap === "half" || snap === "full" ? "overflow-y-auto" : "overflow-hidden")}>
         {children}
       </div>
     </section>

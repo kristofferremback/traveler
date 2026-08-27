@@ -483,12 +483,14 @@ test.describe("the commute screen", () => {
     await page.goto(trip);
 
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
-    // Exactly one recommendation: two would be a contradiction, none would leave the
-    // traveller to rank the list themselves.
-    await expect(sheet(page).getByText("Rekommenderad")).toHaveCount(1);
-    // Both halves of the decision are on the row: when to stand up, and when you land.
-    await expect(rows(page).first()).toContainText(/Gå (nu|om \d+ min|\d{2}:\d{2})/);
+    // Exactly one recommendation among the cards: two would be a contradiction, none
+    // would leave the traveller to rank the list themselves.
+    await expect(rows(page).getByText("Rekommenderad")).toHaveCount(1);
+    // Both halves of the decision are on the card: when to stand up, and when you land.
+    await expect(rows(page).first()).toContainText(/(Gå nu|\d+ min|Gå \d{2}:\d{2}|Gick \d{2}:\d{2})/);
     await expect(rows(page).first()).toContainText(/Framme \d{2}:\d{2}/);
+    // The hero is the recommendation until something else is chosen.
+    await expect(page.getByRole("region", { name: "Vald resa" })).toContainText("Rekommenderad");
   });
 
   test("draws the option that was tapped", async ({ page }) => {
@@ -503,8 +505,8 @@ test.describe("the commute screen", () => {
     const second = rows(page).nth(1).getByRole("button").first();
     await second.click();
     await expect(second).toHaveAttribute("aria-pressed", "true");
-    // Selecting expands the legs -- the stop-by-stop list is the row's own detail.
-    await expect(rows(page).nth(1).locator("li").first()).toBeVisible();
+    // Selecting makes it the hero, whose legs are the stop-by-stop detail.
+    await expect(page.getByRole("region", { name: "Vald resa" }).locator("li").first()).toBeVisible();
     // The geometry for a row that is not the recommended one is not in the first
     // response, so drawing it has to go and fetch it rather than draw nothing.
     await expect
@@ -584,6 +586,24 @@ test.describe("the commute screen", () => {
     await picker.getByRole("button", { name: "Nu" }).click();
     await expect(page).toHaveURL(/^(?!.*when=).*$/);
     await expect(pill).toHaveText("Nu");
+  });
+
+  test("the sheet tucks to its handle and a tap brings it back", async ({ page }) => {
+    await page.goto(trip);
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+    const handle = sheet(page).getByRole("button", { name: /Visa fler resor/ });
+    const box = (await handle.boundingBox())!;
+    const before = (await sheet(page).boundingBox())!.height;
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + 400, { steps: 8 });
+    await page.mouse.up();
+
+    await expect.poll(async () => (await sheet(page).boundingBox())!.height).toBeLessThan(48);
+    expect(before).toBeGreaterThan(200);
+    await sheet(page).getByRole("button", { name: "Visa resor" }).click();
+    await expect.poll(async () => (await sheet(page).boundingBox())!.height).toBeGreaterThan(200);
   });
 
   test("Tidigare moves the planning time back ten minutes and Back undoes it", async ({ page }) => {

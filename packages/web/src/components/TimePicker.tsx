@@ -22,8 +22,8 @@ export function TimePill({ time, onOpen }: { time: PlanTime; onOpen: () => void 
       onClick={onOpen}
       aria-haspopup="dialog"
       className={cn(
-        "pointer-events-auto inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/95 px-3 text-sm backdrop-blur",
-        time && "border-[var(--color-accent)] font-medium",
+        "pointer-events-auto inline-flex min-h-10 max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface)]/90 px-3.5 text-sm font-medium shadow-[var(--shadow-float)] backdrop-blur-xl",
+        time && "text-[var(--color-accent)]",
       )}
     >
       <Clock className="size-4 shrink-0 text-[var(--color-muted)]" aria-hidden />

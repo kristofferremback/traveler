@@ -4,10 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import type { CommuteOption, SavedPlace } from "@traveler/shared";
 import { api, ApiError } from "@/lib/api";
 import { BottomSheet, PEEK_HEIGHT } from "@/components/BottomSheet";
-import { CommuteList } from "@/components/CommuteList";
-import { PlaceChips } from "@/components/PlaceChips";
+import { CommuteCards } from "@/components/CommuteCards";
+import { CommuteHero } from "@/components/CommuteHero";
 import { PlacePicker } from "@/components/PlacePicker";
-import { TimePicker, TimePill, type PlanTime } from "@/components/TimePicker";
+import { TimePicker, type PlanTime } from "@/components/TimePicker";
+import { TripControl } from "@/components/TripControl";
 import { Button } from "@/components/ui/button";
 import { History, RefreshCw } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -253,15 +254,13 @@ export function CommutePage() {
       {/* Above the map, out of its way: the controls sit in a column that does not take
           pointer events except where a control actually is. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 safe-top">
-        <PlaceChips
+        <TripControl
           fromLabel={fromLabel}
           toLabel={toLabel}
+          time={time}
           onOpen={openPicker}
           onSwap={swap}
         />
-        <div className="mt-1.5 flex">
-          <TimePill time={time} onOpen={() => openPicker("time")} />
-        </div>
       </div>
 
       <BottomSheet label="Resor härifrån" onHeightChange={setSheetHeight}>
@@ -334,26 +333,28 @@ export function CommutePage() {
             </ul>
           ) : null}
 
+          {selected ? <CommuteHero option={selected} now={now} /> : null}
+
+          {options.length > 0 ? (
+            <CommuteCards
+              options={options}
+              selectedId={selected?.id ?? null}
+              now={now}
+              onSelect={select}
+            />
+          ) : null}
+
           {commute.isSuccess && !time?.arriveBy ? (
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={earlier}
-              className="w-full"
+              className="w-full rounded-full"
             >
               <History />
               Tidigare
             </Button>
-          ) : null}
-
-          {options.length > 0 ? (
-            <CommuteList
-              options={options}
-              selectedId={selected?.id ?? null}
-              now={now}
-              onSelect={select}
-            />
           ) : null}
 
           {commute.isSuccess && options.length === 0 ? (
