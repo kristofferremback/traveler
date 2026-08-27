@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ArrowLeftRight } from "lucide-react";
 import { TimePill, type PlanTime } from "./TimePicker";
 
@@ -12,12 +13,15 @@ export function TripControl({
   fromLabel,
   toLabel,
   time,
+  trailing,
   onOpen,
   onSwap,
 }: {
   fromLabel: string;
   toLabel: string;
   time: PlanTime;
+  /** Controls that belong beside the time pill rather than in the card. */
+  trailing?: ReactNode;
   onOpen: (end: "from" | "to" | "time") => void;
   onSwap: () => void;
 }) {
@@ -35,7 +39,10 @@ export function TripControl({
         </button>
         <End end="to" caption="Till" label={toLabel} onOpen={onOpen} />
       </div>
-      <TimePill time={time} onOpen={() => onOpen("time")} />
+      <div className="flex items-center gap-2">
+        <TimePill time={time} onOpen={() => onOpen("time")} />
+        {trailing}
+      </div>
     </div>
   );
 }

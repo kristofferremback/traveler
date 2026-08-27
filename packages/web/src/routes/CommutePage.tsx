@@ -4,10 +4,11 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { CommuteOption, SavedPlace } from "@traveler/shared";
 import { api, ApiError } from "@/lib/api";
 import { formatTime } from "@/lib/format";
+import { useOverlay } from "@/lib/overlay";
 import { BottomSheet, PEEK_HEIGHT } from "@/components/BottomSheet";
 import { CommuteCards } from "@/components/CommuteCards";
 import { CommuteHero } from "@/components/CommuteHero";
-import { PlacePicker } from "@/components/PlacePicker";
+import { PlaceSearch, type PlaceChoice } from "@/components/PlaceSearch";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
 import { TripControl } from "@/components/TripControl";
 import type { VehicleTrip } from "@/components/TransitMap";
@@ -232,11 +233,8 @@ export function CommutePage() {
    * Choosing a place replaces that entry with the new trip: the picker never survives in
    * the history it opened from, and Back from the result goes to the trip before it.
    */
-  const picker =
-    (location.state as { picker?: "from" | "to" | "time" } | null)?.picker ?? null;
-  const openPicker = (end: "from" | "to" | "time") =>
-    navigate({ pathname: location.pathname, search: location.search }, { state: { picker: end } });
-  const closePicker = () => navigate(-1);
+  const { open: picker, show: openPicker, close: closePicker, settle } =
+    useOverlay<"from" | "to" | "time">();
 
   const setSearch = (
     next: Partial<Record<"from" | "to" | "when" | "arriveBy", string | null>>,
@@ -248,14 +246,8 @@ export function CommutePage() {
       else search.delete(key);
     }
     setArmed(true);
-    if (fromPicker) {
-      navigate(
-        { pathname: location.pathname, search: `?${search.toString()}` },
-        { replace: true, state: null },
-      );
-    } else {
-      setParams(search, { replace: true });
-    }
+    if (fromPicker) settle(search);
+    else setParams(search, { replace: true });
   };
 
   const setEnds = (next: { from: PlaceRef | null; to: PlaceRef | null }, fromPicker: boolean) =>
@@ -442,20 +434,41 @@ export function CommutePage() {
       ) : null}
 
       {picker === "from" || picker === "to" ? (
-        <PlacePicker
-          end={picker}
-          places={saved}
-          onPick={(ref) =>
+        <PlaceSearch
+          title={picker === "from" ? "Var börjar du?" : "Vart ska du?"}
+          saved={saved}
+          /* Live: the screen plans from wherever the phone is when it searches, not
+             from the address it was standing at when the place was chosen. */
+          currentPosition="live"
+          footer={
+            /* The planner is one search away rather than a fifth tab: it answers a
+               different question, and only sometimes. */
+            <Link
+              to="/plan"
+              className="inline-flex min-h-11 items-center text-sm text-[var(--color-accent)]"
+            >
+              Sök valfri resa
+            </Link>
+          }
+          onPick={(choice) => {
+            const ref = placeRef(choice);
             setEnds(
               picker === "from" ? { from: ref, to: toRef } : { from: fromRef, to: ref },
               true,
-            )
-          }
+            );
+          }}
           onClose={closePicker}
         />
       ) : null}
     </div>
   );
+}
+
+/** A choice from the search screen as this screen's kind of reference. */
+function placeRef(choice: PlaceChoice): PlaceRef {
+  if (choice.kind === "position") return "me";
+  if (choice.kind === "saved") return `place:${choice.place.id}`;
+  return choice.place.id;
 }
 
 /**

@@ -2,9 +2,10 @@ import { useId, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Place } from "@traveler/shared";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Search } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { PlaceSearchField } from "@/components/PlaceSearchField";
+import { useOverlay } from "@/lib/overlay";
+import { PlaceSearch } from "@/components/PlaceSearch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -18,6 +19,8 @@ export function NewPlacePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const labelId = useId();
+  const placeFieldId = useId();
+  const { open: picker, show: openPicker, close: closePicker } = useOverlay<"place">();
 
   const [label, setLabel] = useState("");
   const [place, setPlace] = useState<Place | null>(null);
@@ -67,13 +70,32 @@ export function NewPlacePage() {
           />
         </div>
 
-        <PlaceSearchField
-          label="Plats"
-          value={place}
-          onChange={setPlace}
-          placeholder="Hållplats, adress eller plats"
-          allowCurrentPosition
-        />
+        <div>
+          <span
+            id={placeFieldId}
+            className="mb-1 block text-xs font-medium text-[var(--color-muted)]"
+          >
+            Plats
+          </span>
+          {/* The same search screen the trip control opens, so choosing a place is one
+              act with one layout wherever the app asks for one. */}
+          <button
+            type="button"
+            aria-labelledby={placeFieldId}
+            aria-haspopup="dialog"
+            onClick={() => openPicker("place")}
+            className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-left"
+          >
+            <Search className="size-4 shrink-0 text-[var(--color-muted)]" aria-hidden />
+            <span className="min-w-0 flex-1 truncate text-base">
+              {place ? (
+                place.name
+              ) : (
+                <span className="text-[var(--color-muted)]">Hållplats, adress eller plats</span>
+              )}
+            </span>
+          </button>
+        </div>
 
         {save.isError ? (
           <p role="alert" className="text-sm text-[var(--color-danger)]">
@@ -85,6 +107,21 @@ export function NewPlacePage() {
           {save.isPending ? "Sparar…" : "Spara"}
         </Button>
       </form>
+
+      {picker === "place" ? (
+        <PlaceSearch
+          title="Vilken plats?"
+          currentPosition="address"
+          /* Nothing to offer until something is typed, so the keyboard comes with the
+             screen rather than costing a second tap. */
+          focusField
+          onPick={(choice) => {
+            if (choice.kind === "place") setPlace(choice.place);
+            closePicker();
+          }}
+          onClose={closePicker}
+        />
+      ) : null}
     </div>
   );
 }

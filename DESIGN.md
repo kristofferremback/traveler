@@ -86,6 +86,35 @@ The other options are small cards in a horizontal row: leave time, arrival, line
 status (Knappt, Gick). Tapping a card makes it the hero and draws it on the map; nothing
 navigates. Missed options are the last cards, dimmed.
 
+## Choosing a place
+
+Both search screens ask the same question, so they ask it with the same control in the
+same corner: the Från / swap / Till card with the time pill under it, at the top of the
+screen. The commute screen floats it over the map; the planner sticks it to the top of
+the page. Tapping an end opens one search screen, wherever the app needs a place.
+
+That screen is the whole screen, and its order is fixed:
+
+1. The title and a close button.
+2. The field, right under them. Never lower: a field near the bottom is covered by the
+   phone's keyboard the moment it is used, and so is every suggestion under it.
+3. One list, filling the rest. Nothing sits below it.
+
+The list is the only thing that changes, and it does not change size. Empty, it holds
+Min position and the saved places, because a commute is the same two places most days.
+Typed into, the same rows hold the matches. The region is sized against
+`window.visualViewport` rather than the layout viewport, because a `<dialog>` is in the
+top layer: Android does not shrink the layout viewport for the keyboard and iOS never
+does, so without that the bottom of the list sits behind the keyboard.
+
+The keyboard opens with the screen only where the list would otherwise be empty (saving
+a new place). Where saved places are on offer, the answer is usually one tap away and a
+keyboard over them would be a tap to put away again.
+
+Every overlay on these screens is a history entry, so the phone's Back gesture closes
+it. Choosing something turns that entry into the result rather than going back and then
+changing the trip, which would apply the answer to the entry before it.
+
 ## Visual language
 
 The direction is closer to a system app than to a web page: surfaces that feel like
@@ -117,6 +146,12 @@ Decision log:
 - 2026-08-27: Kris asked for a more readable map that matches his scheme in daylight,
   stop callouts with line and time, a sheet that tucks to the handle, and a sleeker,
   more system-like UI. Mocks published for three directions.
+- 2026-08-27: The place picker was a bottom sheet with the search field under the saved
+  places, which put it in the bottom fifth of a phone screen with its suggestions
+  dropping below it, both behind the keyboard, in a sheet that resized as results came
+  and went. Replaced by one full-height search screen, field at the top, one list under
+  it, shared by the commute screen, the planner and saving a place. The planner's own
+  two-field header went with it: it now uses the same trip control.
 - 2026-08-27: Decided from the mocks. The trip control is one component (Papper): Från,
   swap and Till inside a single surface, the time pill under it. The sheet is Fokus: the
   selected option as a hero (leave time large, arrival and ride beside it), the other
