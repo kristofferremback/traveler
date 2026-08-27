@@ -248,18 +248,32 @@ const siteByStopArea = db.query<{ stop_area_id: number; id: number; gid: string;
 );
 
 /**
- * Stop points near a coordinate, each joined to the site it belongs to.
- *
- * SL publishes the join the other way round -- a site lists its stop areas -- so the
- * area→site map is built in one pass here rather than with a per-row json_each, which
- * would make the query quadratic.
+ * SL publishes the join the other way round: a site lists its stop areas. Inverting it
+ * costs a `json_each` over every site, so it is inverted once and held. A plan asks for
+ * three neighbourhoods, and rebuilding it per call was three passes over the catalog
+ * before any of the work started.
  */
+let areaToSite: Map<number, { id: number; gid: string; name: string }> | null = null;
+
+function stopAreaIndex(): Map<number, { id: number; gid: string; name: string }> {
+  if (areaToSite) return areaToSite;
+  const built = new Map<number, { id: number; gid: string; name: string }>();
+  for (const row of siteByStopArea.all()) {
+    built.set(row.stop_area_id, { id: row.id, gid: row.gid, name: row.name });
+  }
+  areaToSite = built;
+  return built;
+}
+
+/** Called by the sync when it rewrites sites; nothing else changes what sites own. */
+export function invalidateStopAreaIndex(): void {
+  areaToSite = null;
+}
+
+/** Stop points near a coordinate, each joined to the site it belongs to. */
 export function stopPointsNear(lat: number, lon: number, radiusMetres: number): (StopPointRow & { distanceMetres: number })[] {
   const box = degreeBox(lat, lon, radiusMetres);
-  const areaToSite = new Map<number, { id: number; gid: string; name: string }>();
-  for (const row of siteByStopArea.all()) {
-    areaToSite.set(row.stop_area_id, { id: row.id, gid: row.gid, name: row.name });
-  }
+  const areaToSite = stopAreaIndex();
 
   const out: (StopPointRow & { distanceMetres: number })[] = [];
   for (const p of stopPointsInBox.all(box.minLat, box.maxLat, box.minLon, box.maxLon)) {
