@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { AlertTriangle, MapPin, Search, Settings, TriangleAlert } from "lucide-react";
+import { AlertTriangle, MapPin, RefreshCw, Search, Settings, TriangleAlert } from "lucide-react";
 import { CommutePage } from "./routes/CommutePage";
 import { PlanPage } from "./routes/PlanPage";
 import { StopPage } from "./routes/StopPage";
@@ -13,6 +13,7 @@ import { PlacesPage } from "./routes/PlacesPage";
 import { NewPlacePage } from "./routes/NewPlacePage";
 import { PlacePage } from "./routes/PlacePage";
 import { Button } from "./components/ui/button";
+import { useNewVersion } from "./hooks/useNewVersion";
 import { useSession } from "./lib/auth";
 import { cn } from "./lib/utils";
 
@@ -54,6 +55,31 @@ function TabBar() {
         ))}
       </ul>
     </nav>
+  );
+}
+
+/**
+ * The one thing that tells a long-lived tab it is out of date.
+ *
+ * It floats rather than taking a row of its own, so nothing on any screen moves when it
+ * appears, and it does not reload by itself: someone reading the trip they are about to
+ * take should not have it vanish. It is gone the moment it is used, and it can only
+ * appear after an actual deploy.
+ */
+function ReloadPrompt() {
+  const stale = useNewVersion();
+  if (!stale) return null;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 z-40 flex justify-center px-3 above-tabs">
+      <button
+        type="button"
+        onClick={() => window.location.reload()}
+        className="pointer-events-auto flex min-h-11 items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/95 px-4 text-sm font-medium shadow-lg backdrop-blur"
+      >
+        <RefreshCw className="size-4 text-[var(--color-accent)]" aria-hidden />
+        Ny version, ladda om
+      </button>
+    </div>
   );
 }
 
@@ -145,7 +171,12 @@ export function App() {
       </main>
       {/* The sign-in and welcome pages are their own full screen; a tab bar there would
           offer four places to go before there is anywhere to go. */}
-      {isPublic ? null : <TabBar />}
+      {isPublic ? null : (
+        <>
+          <TabBar />
+          <ReloadPrompt />
+        </>
+      )}
     </ErrorBoundary>
   );
 }

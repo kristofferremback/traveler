@@ -111,6 +111,11 @@
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
+/* Floating above the tab bar (3.5rem plus its safe-area padding), like the map controls. */
+@utility above-tabs {
+  bottom: calc(3.5rem + max(0.75rem, env(safe-area-inset-bottom, 0px)) + 0.75rem);
+}
+
 @utility safe-top {
   padding-top: max(0.75rem, env(safe-area-inset-top));
 }
