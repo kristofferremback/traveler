@@ -860,6 +860,41 @@ test.describe("other surfaces", () => {
     }
   });
 
+  /**
+   * The regression: a phone kept a tab alive for two hours across a deploy, so it went
+   * on running the build that redrew sixteen hundred vehicles every four seconds and
+   * reported the bug that deploy had fixed. `index.html` is `no-cache`, so a reload was
+   * always the cure; nothing ever asked for one.
+   */
+  const isAppShellCheck = (url: URL) => url.pathname === "/";
+
+  test("a tab whose build is still the current one says nothing", async ({ page }) => {
+    await page.goto("/");
+    const checked = page.waitForResponse(
+      (r) => isAppShellCheck(new URL(r.url())) && r.request().resourceType() === "fetch",
+    );
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await checked;
+    await expect(page.getByRole("button", { name: "Ny version, ladda om" })).toBeHidden();
+  });
+
+  test("a tab left open across a deploy offers the reload", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByRole("navigation", { name: "Huvudmeny" })).toBeVisible();
+
+    // Only the app's own check is answered with a newer shell; the navigation that got
+    // us here has already happened and must not be rewritten under it.
+    await page.route(isAppShellCheck, async (route) => {
+      if (route.request().resourceType() !== "fetch") return route.continue();
+      const res = await route.fetch();
+      const shipped = (await res.text()).replace(/index-[^.]+\.js/, "index-adifferentbuild.js");
+      await route.fulfill({ response: res, body: shipped });
+    });
+
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(page.getByRole("button", { name: "Ny version, ladda om" })).toBeVisible();
+  });
+
   test("the planner survives an API outage without a white screen", async ({ page }) => {
     await page.route("**/api/journeys*", (route) => route.abort());
     await page.goto("/plan?from=9091001000009189&to=9091001000009001");
