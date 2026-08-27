@@ -306,6 +306,23 @@ function calloutElement(c: Callout): HTMLElement {
   return el;
 }
 
+/** A vehicle on one of the trip's lines: the number in the line's colour, pointing its way. */
+function vehiclePill(line: string, color: string, bearing: number | null): HTMLElement {
+  const el = document.createElement("span");
+  el.className =
+    "vehicle pointer-events-none flex items-center gap-0.5 rounded-full border-2 border-[var(--color-bg)] px-1.5 py-0.5 text-[11px] font-bold text-white shadow";
+  el.style.backgroundColor = color;
+  el.textContent = line;
+  if (bearing !== null) {
+    const arrow = document.createElement("span");
+    arrow.textContent = "➤";
+    arrow.className = "inline-block text-[9px]";
+    arrow.style.transform = `rotate(${Math.round(bearing - 90)}deg)`;
+    el.appendChild(arrow);
+  }
+  return el;
+}
+
 /** Where the trip ends: a ring rather than a dot, so the two ends never read alike. */
 function destinationMarker(): HTMLElement {
   const el = document.createElement("span");
@@ -356,6 +373,7 @@ export function TransitMap({
   option,
   neighbourhood,
   showVehicles = false,
+  vehicleLines = null,
   bottomInset = 0,
   className,
 }: {
@@ -365,6 +383,12 @@ export function TransitMap({
   /** A saved place's walking neighbourhood: rings, the walks, and the stops. */
   neighbourhood?: Neighbourhood | null;
   showVehicles?: boolean;
+  /**
+   * Line designations whose live vehicles to draw, as pills carrying the number: the
+   * selected trip's lines, so the traveller can see the 443 coming. Nothing is drawn
+   * when the feed is unavailable; the map does not need a notice for that.
+   */
+  vehicleLines?: string[] | null;
   /** Pixels at the bottom covered by something else, such as the commute sheet. */
   bottomInset?: number;
   className?: string;
@@ -374,6 +398,7 @@ export function TransitMap({
   const hoodMarkers = useRef<maplibregl.Marker[]>([]);
   const doorMarkers = useRef<maplibregl.Marker[]>([]);
   const calloutMarkers = useRef<maplibregl.Marker[]>([]);
+  const vehicleMarkers = useRef<maplibregl.Marker[]>([]);
   const [ready, setReady] = useState(false);
   const [bbox, setBbox] = useState<string | null>(null);
   const [styleError, setStyleError] = useState(false);
@@ -623,11 +648,31 @@ export function TransitMap({
     return detach;
   }, [neighbourhood, ready]);
 
+  const wantsVehicles = showVehicles || (vehicleLines?.length ?? 0) > 0;
   const vehicleUrl = useMemo(
-    () => (showVehicles && bbox ? streams.vehicles({ bbox }) : null),
-    [showVehicles, bbox],
+    () => (wantsVehicles && bbox ? streams.vehicles({ bbox }) : null),
+    [wantsVehicles, bbox],
   );
   const vehicles = useStream<VehiclesResponse>(vehicleUrl, "vehicles");
+
+  // The trip's own vehicles, as pills with the line number, so "the 443 is two stops
+  // away" is something the map says. The feed is by area, so the lines are picked here.
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready) return;
+    for (const marker of vehicleMarkers.current) marker.remove();
+    vehicleMarkers.current = [];
+    const lines = new Set(vehicleLines ?? []);
+    if (lines.size === 0) return;
+    for (const v of vehicles.data?.vehicles ?? []) {
+      if (!v.line || !lines.has(v.line)) continue;
+      vehicleMarkers.current.push(
+        new maplibregl.Marker({ element: vehiclePill(v.line, modeColor(v.mode, v.line), v.bearing) })
+          .setLngLat([v.lon, v.lat])
+          .addTo(instance),
+      );
+    }
+  }, [vehicles.data, vehicleLines, ready]);
 
   useEffect(() => {
     const instance = map.current;

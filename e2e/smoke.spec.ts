@@ -534,6 +534,30 @@ test.describe("the commute screen", () => {
     await expect(callouts.filter({ hasText: designation }).first()).toBeVisible();
   });
 
+  test("draws live vehicles for the selected trip's lines only", async ({ page }) => {
+    // The local server has no Trafiklab key, so the stream is played back: one vehicle
+    // on the recommended line and one on a line the trip does not ride.
+    let line = "";
+    await page.route("**/api/vehicles/stream*", (route) => {
+      const vehicle = (id: string, l: string) =>
+        `{"id":"${id}","lat":59.31,"lon":18.12,"bearing":90,"speed":null,"mode":"BUS","line":"${l}","tripId":null,"destination":null,"timestamp":null}`;
+      route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: `event: vehicles\ndata: {"vehicles":[${vehicle("a", line)},${vehicle("b", "999")}],"fetchedAt":"2026-01-01T00:00:00Z","available":true,"reason":null}\n\n`,
+      });
+    });
+    await open(page);
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+    const badge = await rows(page).first().locator("[style*='background-color']").first().innerText();
+    line = badge.trim().split("\n")[0]!;
+
+    // The pill is the marker element itself.
+    const pills = page.locator(".maplibregl-marker.vehicle");
+    await expect(pills.filter({ hasText: line }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(pills.filter({ hasText: "999" })).toHaveCount(0);
+  });
+
   test("keeps from and to in the URL and swaps them", async ({ page }) => {
     await page.goto(trip);
     const from = page.getByRole("button", { name: /^Från/ });
