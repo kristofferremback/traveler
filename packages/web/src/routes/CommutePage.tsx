@@ -202,6 +202,14 @@ export function CommutePage() {
     [commute],
   );
 
+  const selectedLines = useMemo(
+    () =>
+      selected
+        ? [...new Set(selected.journey.legs.map((leg) => leg.line?.designation).filter((d): d is string => Boolean(d)))]
+        : null,
+    [selected],
+  );
+
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), TICK_MS);
@@ -284,6 +292,7 @@ export function CommutePage() {
       <Suspense fallback={<div className="size-full bg-[var(--color-surface-2)]" />}>
         <TransitMap
           option={selected}
+          vehicleLines={selectedLines}
           bottomInset={bottomInset}
           className="commute-map relative size-full"
         />
