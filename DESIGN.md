@@ -34,9 +34,9 @@ The rule is therefore one scheme for everything on screen at once: UI tokens, ba
 markers and route glow switch together, and the basemap is chosen for readability in
 that scheme, not for looking dramatic.
 
-Basemap candidates from OpenFreeMap: `positron` and `bright` and `liberty` for light,
-`dark` and `fiord` for dark. The choice is made from the mocks (see below), judged on
-one thing: can you read street names and see the route at arm's length outdoors.
+Basemaps from OpenFreeMap: `liberty` in light, `fiord` in dark, chosen from the mocks on
+one criterion: street names and the route readable at arm's length outdoors. (`dark` was
+the one that failed it; `positron` and `bright` were the light candidates.)
 
 Tokens live in `packages/web/src/index.css`. Line colours live in `lib/modes.ts` because
 MapLibre cannot read CSS variables; those are SL's own colours and are not themed.
@@ -75,11 +75,16 @@ Four heights instead of three:
 Dragging is continuous; release snaps to the nearest height. The handle is a button, so
 keyboard users cycle through the heights. Escape returns to peek.
 
-### Rows
+### The hero and the alternatives
 
-A row is the decision: leave time (big), arrival (right), the ride (line badges, from
-which stop to which), changes and walk, and its status (Rekommenderad, Knappt, Gick).
-Tapping a row selects it (draws it on the map, shows its legs) and never navigates.
+The sheet shows one option large: the selected one, which is the recommendation until
+the traveller picks another. The hero carries the leave time at clock size ("3 min",
+"Gå nu", "07:58"), the arrival, and the ride (line badge, departure time, boarding stop,
+alighting stop). Its legs, stop by stop, sit under it.
+
+The other options are small cards in a horizontal row: leave time, arrival, line badge,
+status (Knappt, Gick). Tapping a card makes it the hero and draws it on the map; nothing
+navigates. Missed options are the last cards, dimmed.
 
 ## Visual language
 
@@ -111,4 +116,9 @@ Decision log:
 
 - 2026-08-27: Kris asked for a more readable map that matches his scheme in daylight,
   stop callouts with line and time, a sheet that tucks to the handle, and a sleeker,
-  more system-like UI. Mocks published for three directions; decision pending.
+  more system-like UI. Mocks published for three directions.
+- 2026-08-27: Decided from the mocks. The trip control is one component (Papper): Från,
+  swap and Till inside a single surface, the time pill under it. The sheet is Fokus: the
+  selected option as a hero (leave time large, arrival and ride beside it), the other
+  options as small cards in a horizontal row, the legs under the hero. Basemaps:
+  `liberty` in light, `fiord` in dark.
