@@ -11,28 +11,34 @@ import { followInvite, mintInvite, signInContext, signInRequest, uniqueEmail, ve
  * reads out.
  */
 
-// `getByLabel` matches substrings, and the swap button's label contains both field
-// names, so field lookups are pinned to the combobox role.
-const fromField = (page: Page) => page.getByRole("combobox", { name: "Från" });
-const toField = (page: Page) => page.getByRole("combobox", { name: "Till" });
+/**
+ * The two ends of the trip, as the control on both search screens shows them: buttons
+ * that say where you are going, not fields. The name is the caption plus the value, so
+ * the anchor is the caption.
+ */
+const tripEnd = (page: Page, end: "Från" | "Till") =>
+  page.getByRole("button", { name: new RegExp(`^${end}`) });
+/** The field inside the search screen. Only one is ever open. */
+const searchField = (page: Page) => page.getByRole("combobox");
 const journeyCards = (page: Page) => page.locator("main ul > li").filter({ hasText: "→" });
 
 /**
- * Pick the first suggestion.
+ * Choose a place through the search screen: open it, type, take the first suggestion.
  *
  * Enter alone, no ArrowDown: the list opens with the first option already highlighted,
  * so an arrow press moves to the second. For "gullmars" that second option is the
  * street named Gullmarsplan rather than the stop, which is a perfectly good result and
  * the wrong one to assert against.
  */
-async function pickStop(page: Page, field: ReturnType<typeof fromField>, query: string, expected: RegExp) {
-  await field.click();
+async function pickStop(page: Page, open: () => Promise<void>, query: string, expected: RegExp) {
+  await open();
+  const field = searchField(page);
+  await expect(field).toBeVisible();
   await field.fill(query);
-  const listbox = page.getByRole("listbox").first();
-  await expect(listbox).toBeVisible();
+  const listbox = page.getByRole("listbox");
   await expect(listbox.getByRole("option").first()).toContainText(expected);
   await field.press("Enter");
-  await expect(field).toHaveValue(expected);
+  await expect(listbox).toBeHidden();
 }
 
 /**
@@ -70,30 +76,31 @@ test.describe("preconditions", () => {
 });
 
 test.describe("planning a journey", () => {
-  test("renders the form instead of a blank page", async ({ page }) => {
+  test("renders the trip control instead of a blank page", async ({ page }) => {
     await page.goto("/plan");
-    await expect(fromField(page)).toBeVisible();
-    await expect(toField(page)).toBeVisible();
+    await expect(tripEnd(page, "Från")).toBeVisible();
+    await expect(tripEnd(page, "Till")).toBeVisible();
     // The guard against a white screen: a crashed React root leaves an empty body.
     expect((await page.locator("body").innerText()).trim().length).toBeGreaterThan(20);
   });
 
   test("typeahead finds a stop and the keyboard selects it", async ({ page }) => {
     await page.goto("/plan");
-    await pickStop(page, fromField(page), "gullmars", /Gullmarsplan/);
+    await pickStop(page, () => tripEnd(page, "Från").click(), "gullmars", /Gullmarsplan/);
+    await expect(tripEnd(page, "Från")).toContainText(/Gullmarsplan/);
     // Selecting has to reach the URL; that is what makes a trip a shareable link.
     await expect(page).toHaveURL(/from=9091001000009189/);
   });
 
   test("arrow keys move through the suggestions", async ({ page }) => {
     await page.goto("/plan");
-    const field = fromField(page);
-    await field.click();
+    await tripEnd(page, "Från").click();
+    const field = searchField(page);
     await field.fill("gullmars");
-    const listbox = page.getByRole("listbox").first();
-    await expect(listbox).toBeVisible();
+    const listbox = page.getByRole("listbox");
 
     const options = listbox.getByRole("option");
+    await expect(options.first()).toContainText(/Gullmarsplan/);
     await expect(options.first()).toHaveAttribute("aria-selected", "true");
     await field.press("ArrowDown");
     await expect(options.nth(1)).toHaveAttribute("aria-selected", "true");
@@ -103,18 +110,58 @@ test.describe("planning a journey", () => {
     // Escape closes without committing anything.
     await field.press("Escape");
     await expect(listbox).toBeHidden();
+    await expect(tripEnd(page, "Från")).toContainText("Välj plats");
+  });
+
+  test("the field is above its results, and they arrive without moving it", async ({ page }) => {
+    // The bug this replaced: the field sat at the bottom of a sheet, where the phone's
+    // keyboard covers it and every suggestion under it, and the sheet resized as
+    // suggestions came and went.
+    await page.goto("/plan");
+    await tripEnd(page, "Från").click();
+    const field = searchField(page);
+
+    const box = (await field.boundingBox())!;
+    const dialog = (await page.getByRole("dialog").boundingBox())!;
+    const viewport = page.viewportSize()!;
+    // The screen is the screen, and the field is in its top third.
+    expect(dialog.height).toBeGreaterThan(viewport.height * 0.9);
+    expect(box.y).toBeLessThan(viewport.height / 3);
+    // The shortcuts are under the field, never over it.
+    const shortcut = (await page.getByRole("option").first().boundingBox())!;
+    expect(shortcut.y).toBeGreaterThanOrEqual(box.y + box.height);
+
+    await field.fill("gullmars");
+    await expect(page.getByRole("option").first()).toContainText(/Gullmarsplan/);
+    // Results replace the shortcuts inside the same region: nothing above them moved.
+    expect((await field.boundingBox())!.y).toBeCloseTo(box.y, 0);
+    expect((await page.getByRole("option").first().boundingBox())!.y).toBeCloseTo(shortcut.y, 0);
+  });
+
+  test("the search screen looks right in both themes", async ({ page }) => {
+    // Not asserted: a screenshot is for a human to look at.
+    for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto("/plan");
+      await tripEnd(page, "Från").click();
+      await searchField(page).fill("gullmars");
+      await expect(page.getByRole("option").first()).toContainText(/Gullmarsplan/);
+      await page.screenshot({ path: `.e2e/explore/search-${scheme}.png` });
+      await searchField(page).press("Escape");
+    }
   });
 
   test("plain-ascii typing matches a stop spelled with diacritics", async ({ page }) => {
     await page.goto("/plan");
     // "sodermalmstorg" must find "Slussen/Södermalmstorg".
-    await pickStop(page, toField(page), "sodermalmstorg", /Södermalmstorg/);
+    await pickStop(page, () => tripEnd(page, "Till").click(), "sodermalmstorg", /Södermalmstorg/);
+    await expect(tripEnd(page, "Till")).toContainText(/Södermalmstorg/);
   });
 
   test("plans a real journey with times, duration and lines", async ({ page }) => {
     await page.goto("/plan");
-    await pickStop(page, fromField(page), "gullmars", /Gullmarsplan/);
-    await pickStop(page, toField(page), "t-centralen", /T-Centralen/);
+    await pickStop(page, () => tripEnd(page, "Från").click(), "gullmars", /Gullmarsplan/);
+    await pickStop(page, () => tripEnd(page, "Till").click(), "t-centralen", /T-Centralen/);
 
     const first = journeyCards(page).first();
     await expect(first).toBeVisible({ timeout: 30_000 });
@@ -132,41 +179,43 @@ test.describe("planning a journey", () => {
 
   test("a shared link restores the whole search", async ({ page }) => {
     await page.goto("/plan?from=9091001000009189&to=9091001000009001");
-    await expect(fromField(page)).toHaveValue(/Gullmarsplan/);
-    await expect(toField(page)).toHaveValue(/T-Centralen/);
+    await expect(tripEnd(page, "Från")).toContainText(/Gullmarsplan/);
+    await expect(tripEnd(page, "Till")).toContainText(/T-Centralen/);
     await expect(journeyCards(page).first()).toBeVisible({ timeout: 30_000 });
   });
 
   test("swapping endpoints updates both fields and the URL", async ({ page }) => {
     await page.goto("/plan?from=9091001000009189&to=9091001000009001");
-    await expect(fromField(page)).toHaveValue(/Gullmarsplan/);
+    await expect(tripEnd(page, "Från")).toContainText(/Gullmarsplan/);
 
     await page.getByRole("button", { name: /byt plats/i }).click();
 
     await expect(page).toHaveURL(/from=9091001000009001/);
     await expect(page).toHaveURL(/to=9091001000009189/);
-    await expect(fromField(page)).toHaveValue(/T-Centralen/);
-    await expect(toField(page)).toHaveValue(/Gullmarsplan/);
+    await expect(tripEnd(page, "Från")).toContainText(/T-Centralen/);
+    await expect(tripEnd(page, "Till")).toContainText(/Gullmarsplan/);
   });
 
-  test("typing over a selected stop keeps what was typed", async ({ page }) => {
-    // Regression: the value-sync effect treated this deselection as an external clear
-    // and wiped the field on the first keystroke.
+  test("the search screen opens empty over a chosen stop, and Back keeps it", async ({ page }) => {
+    // The field searches; it does not hold the answer. Opening it over Gullmarsplan
+    // offers the shortcuts rather than the word to type over, and backing out of it
+    // leaves the trip as it was.
     await page.goto("/plan?from=9091001000009189&to=9091001000009001");
-    const field = fromField(page);
-    await expect(field).toHaveValue(/Gullmarsplan/);
-    await field.click();
-    await field.fill("Slussen");
-    await expect(field).toHaveValue("Slussen");
+    await tripEnd(page, "Från").click();
+    await expect(searchField(page)).toHaveValue("");
+
+    await page.goBack();
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(tripEnd(page, "Från")).toContainText(/Gullmarsplan/);
   });
 
   test("going Back clears a field the URL no longer names", async ({ page }) => {
     // Regression: local state outlived its URL parameter, so Back showed a stop that
     // was no longer part of the search.
     await page.goto("/plan");
-    await pickStop(page, fromField(page), "gullmars", /Gullmarsplan/);
+    await pickStop(page, () => tripEnd(page, "Från").click(), "gullmars", /Gullmarsplan/);
     await page.goto("/plan");
-    await expect(fromField(page)).toHaveValue("");
+    await expect(tripEnd(page, "Från")).toContainText("Välj plats");
   });
 
   test("shows the map on request", async ({ page }) => {
@@ -366,7 +415,8 @@ test.describe("saved places", () => {
 
     await page.goto("/places/new");
     await page.getByLabel("Namn").fill("Hem");
-    await pickStop(page, page.getByRole("combobox", { name: "Plats" }), "jarlaberg", /Jarlaberg/);
+    await pickStop(page, () => page.getByRole("button", { name: "Plats" }).click(), "jarlaberg", /Jarlaberg/);
+    await expect(page.getByRole("button", { name: "Plats" })).toContainText(/Jarlaberg/);
     await page.getByRole("button", { name: "Spara" }).click();
 
     await expect(page).toHaveURL(/\/places\/\d+$/);
@@ -591,7 +641,7 @@ test.describe("the commute screen", () => {
     await page.goto(trip);
     await page.getByRole("button", { name: /^Från/ }).click();
 
-    const picker = page.getByRole("dialog", { name: "Välj var du börjar" });
+    const picker = page.getByRole("dialog", { name: "Var börjar du?" });
     await expect(picker).toBeVisible();
 
     // An overlay that Back does not close is a trap on a phone, where Back is a gesture.
@@ -599,8 +649,24 @@ test.describe("the commute screen", () => {
     await expect(picker).toBeHidden();
 
     await page.getByRole("button", { name: /^Från/ }).click();
-    await page.getByRole("dialog").getByRole("button", { name: /Hem/ }).click();
+    await page.getByRole("dialog").getByRole("option", { name: /Hem/ }).click();
     await expect(page).toHaveURL(new RegExp(`from=place%3A${homeId}`));
+  });
+
+  test("the picker offers the saved places first, in both themes", async ({ page }) => {
+    for (const scheme of ["dark", "light"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto(trip);
+      await page.getByRole("button", { name: /^Till/ }).click();
+      const picker = page.getByRole("dialog", { name: "Vart ska du?" });
+      await expect(picker.getByRole("option", { name: /Hem/ })).toBeVisible();
+      // Position, then the saved places: the answer before the keyboard.
+      const names = await picker.getByRole("option").allInnerTexts();
+      expect(names[0]).toContain("Min position");
+      expect(names.join(" ")).toContain("Hem");
+      await page.screenshot({ path: `.e2e/explore/picker-${scheme}.png` });
+      await page.goBack();
+    }
   });
 
   test("plans around a chosen time, keeps it in the URL, and Nu clears it", async ({ page }) => {

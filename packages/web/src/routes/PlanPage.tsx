@@ -2,10 +2,12 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { Place } from "@traveler/shared";
-import { ArrowUpDown, Clock, Map as MapIcon, X } from "lucide-react";
+import { Map as MapIcon } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { instantToLocalInput, localInputToInstant } from "@/lib/format";
-import { PlaceSearchField } from "@/components/PlaceSearchField";
+import { useOverlay } from "@/lib/overlay";
+import { PlaceSearch, type PlaceChoice } from "@/components/PlaceSearch";
+import { TimePicker, type PlanTime } from "@/components/TimePicker";
+import { TripControl } from "@/components/TripControl";
 import { JourneyCard } from "@/components/JourneyCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,6 +21,12 @@ const TransitMap = lazy(() =>
 );
 
 /**
+ * Any trip between any two places, as opposed to the commute screen's two saved ends.
+ *
+ * The question is the same question, so it is asked with the same control in the same
+ * corner of the screen: Från, swap, Till, and the time under them. Only the answer
+ * differs -- SL's own journeys rather than our walking engine's options.
+ *
  * The whole query lives in the URL, so a planned trip is a link. Back and forward move
  * through searches the way they move through pages, and reloading keeps the result.
  */
@@ -33,7 +41,17 @@ export function PlanPage() {
   const toId = params.get("to");
   const when = params.get("when");
   const arriveBy = params.get("arriveBy") === "1";
-  const showTime = Boolean(when);
+  const time: PlanTime = when ? { when, arriveBy } : null;
+
+  const savedPlaces = useQuery({
+    queryKey: ["places"],
+    queryFn: ({ signal }) => api.places.list(signal),
+    staleTime: 60_000,
+  });
+  const saved = useMemo(
+    () => [...(savedPlaces.data?.places ?? [])].sort((a, b) => a.sortOrder - b.sortOrder),
+    [savedPlaces.data],
+  );
 
   /**
    * Keep the fields and the URL in step, in both directions.
@@ -75,40 +93,41 @@ export function PlanPage() {
     };
   }, [toId, to?.id]);
 
-  const update = useCallback(
+  const merge = useCallback(
     (changes: Record<string, string | null>) => {
       const next = new URLSearchParams(params);
       for (const [key, value] of Object.entries(changes)) {
         if (value === null) next.delete(key);
         else next.set(key, value);
       }
-      // Replace rather than push: adjusting a field is refining one search, not
-      // starting another, and each keystroke should not become a Back step.
-      setParams(next, { replace: true });
+      return next;
     },
-    [params, setParams],
+    [params],
   );
 
-  const chooseFrom = useCallback(
-    (place: Place | null) => {
-      setFrom(place);
-      update({ from: place?.id ?? null });
-    },
-    [update],
+  // Replace rather than push: adjusting one end is refining one search, not starting
+  // another, and each adjustment should not become a Back step.
+  const update = useCallback(
+    (changes: Record<string, string | null>) => setParams(merge(changes), { replace: true }),
+    [merge, setParams],
   );
 
-  const chooseTo = useCallback(
-    (place: Place | null) => {
-      setTo(place);
-      update({ to: place?.id ?? null });
-    },
-    [update],
+  const { open: picker, show: openPicker, close: closePicker, settle } =
+    useOverlay<"from" | "to" | "time">();
+
+  /** An answer from an overlay: the same change as `update`, and the overlay closes. */
+  const answer = useCallback(
+    (changes: Record<string, string | null>) => settle(merge(changes)),
+    [merge, settle],
   );
 
+  // The two places are swapped here as well as in the URL: the effects above would
+  // otherwise re-resolve both ids over the network to learn what this already knows.
   const swap = () => {
+    const previous = from;
     setFrom(to);
-    setTo(from);
-    update({ from: to?.id ?? null, to: from?.id ?? null });
+    setTo(previous);
+    update({ from: toId, to: fromId });
   };
 
   const query = useQuery({
@@ -138,97 +157,30 @@ export function PlanPage() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 pb-24">
-      <div className="sticky top-0 z-20 -mx-4 bg-[var(--color-bg)]/95 px-4 pb-3 pt-3 backdrop-blur safe-top">
-        <div className="flex items-end gap-2">
-          <div className="min-w-0 flex-1 space-y-2">
-            <PlaceSearchField
-              label="Från"
-              value={from}
-              onChange={chooseFrom}
-              placeholder="Hållplats, adress eller plats"
-              allowCurrentPosition
-            />
-            <PlaceSearchField
-              label="Till"
-              value={to}
-              onChange={chooseTo}
-              placeholder="Hållplats, adress eller plats"
-            />
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={swap}
-            disabled={!from && !to}
-            aria-label="Byt plats på från och till"
-            className="mb-0.5"
-          >
-            <ArrowUpDown />
-          </Button>
-        </div>
-
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {showTime ? (
-            <>
-              <label className="sr-only" htmlFor="departure-time">
-                {arriveBy ? "Framme senast" : "Avgång tidigast"}
-              </label>
-              <input
-                id="departure-time"
-                type="datetime-local"
-                value={instantToLocalInput(when!)}
-                onChange={(e) => {
-                  const instant = localInputToInstant(e.target.value);
-                  if (instant) update({ when: instant });
-                }}
-                className="min-h-11 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm"
-              />
+    <div className="mx-auto w-full max-w-2xl px-3 pb-24">
+      <div className="sticky top-0 z-20 -mx-3 bg-[var(--color-bg)]/95 px-3 pb-3 pt-1 backdrop-blur safe-top">
+        <TripControl
+          fromLabel={from?.name ?? "Välj plats"}
+          toLabel={to?.name ?? "Välj plats"}
+          time={time}
+          onOpen={openPicker}
+          onSwap={swap}
+          trailing={
+            journeys.length > 0 ? (
               <Button
                 type="button"
-                variant={arriveBy ? "default" : "outline"}
+                variant={showMap ? "default" : "outline"}
                 size="sm"
-                onClick={() => update({ arriveBy: arriveBy ? null : "1" })}
-                aria-pressed={arriveBy}
+                onClick={() => setShowMap((v) => !v)}
+                aria-pressed={showMap}
+                className="rounded-full"
               >
-                Framme senast
+                <MapIcon />
+                Karta
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => update({ when: null, arriveBy: null })}
-              >
-                <X />
-                Nu
-              </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => update({ when: new Date().toISOString() })}
-            >
-              <Clock />
-              Välj tid
-            </Button>
-          )}
-
-          {journeys.length > 0 ? (
-            <Button
-              type="button"
-              variant={showMap ? "default" : "outline"}
-              size="sm"
-              onClick={() => setShowMap((v) => !v)}
-              aria-pressed={showMap}
-            >
-              <MapIcon />
-              Karta
-            </Button>
-          ) : null}
-        </div>
+            ) : null
+          }
+        />
       </div>
 
       {showMap && selectedJourney ? (
@@ -291,6 +243,40 @@ export function PlanPage() {
           {notice}
         </p>
       ))}
+
+      {picker === "time" ? (
+        <TimePicker
+          time={time}
+          onPick={(next) =>
+            answer({ when: next?.when ?? null, arriveBy: next?.arriveBy ? "1" : null })
+          }
+          onClose={closePicker}
+        />
+      ) : null}
+
+      {picker === "from" || picker === "to" ? (
+        <PlaceSearch
+          title={picker === "from" ? "Var börjar du?" : "Vart ska du?"}
+          saved={saved}
+          /* An address rather than the live ref the commute screen keeps: this screen
+             plans one trip from one point, and the URL has to name it. */
+          currentPosition="address"
+          onPick={(choice) => answer({ [picker]: placeId(choice) })}
+          onClose={closePicker}
+        />
+      ) : null}
     </div>
   );
+}
+
+/**
+ * A choice from the search screen as a place id for the URL.
+ *
+ * A saved place stands for the place under it here rather than for the label: this
+ * screen has no "Hem", only the stop Hem points at, and the planner speaks in ids.
+ */
+function placeId(choice: PlaceChoice): string | null {
+  if (choice.kind === "saved") return choice.place.ref;
+  if (choice.kind === "place") return choice.place.id;
+  return null;
 }
