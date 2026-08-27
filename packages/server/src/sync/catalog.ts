@@ -1,4 +1,5 @@
 import { db } from "../db/index.ts";
+import { invalidateStopAreaIndex } from "../db/catalog.ts";
 import { logger } from "../lib/log.ts";
 import { describe } from "../lib/errors.ts";
 import { normaliseMode, modeFromStopAreaType } from "../sl/modes.ts";
@@ -149,6 +150,8 @@ function upsertSites(sites: SlSite[], now: string): SyncCounts {
   }
 
   const removed = retireMissing("sites", seen, now);
+  // The reader holds the stop area → site map, which is built from exactly these rows.
+  invalidateStopAreaIndex();
   return { added, updated, removed };
 }
 

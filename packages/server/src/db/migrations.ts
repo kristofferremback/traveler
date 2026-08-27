@@ -298,4 +298,15 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX gtfs_trips_route_idx ON gtfs_trips(route_id);
   `,
+
+  // 10 -- the two box lookups on the planning path, which were both full scans.
+  //
+  //       Every plan asks for stop points around three coordinates, over 14 000 rows
+  //       each time, and then asks whether a walking neighbourhood near the traveller
+  //       has already been computed. Neither table had an index its WHERE clause could
+  //       use, so both were read end to end before any upstream call was made.
+  `
+  CREATE INDEX stop_points_latlon_idx ON stop_points(lat, lon) WHERE removed_at IS NULL;
+  CREATE INDEX neighbourhoods_latlon_idx ON neighbourhoods(lat, lon);
+  `,
 ];
