@@ -101,10 +101,26 @@
   height: 44px;
 }
 
+/*
+ * Just clear of the tab bar and of the sheet, wherever the sheet currently is.
+ *
+ * This used to be the tab bar plus a hard 188 px, which is the sheet at one of its four
+ * heights and none of the others. Tucked, it left the licence floating in the middle of
+ * an empty map with nothing under it, which reads as a stray button rather than as a
+ * credit. `--map-inset` is the sheet's real height, published by TransitMap.
+ */
 .commute-map .maplibregl-ctrl-bottom-right,
 .commute-map .maplibregl-ctrl-bottom-left {
-  /* Tab bar (3.5rem + its safe-area padding) plus the sheet at peek (188px). */
-  bottom: calc(3.5rem + max(0.75rem, env(safe-area-inset-bottom, 0px)) + 188px);
+  bottom: calc(3.5rem + max(0.75rem, env(safe-area-inset-bottom, 0px)) + var(--map-inset, 0px));
+  /* The sheet slides between its heights; a licence that jumps ahead of it looks loose. */
+  transition: bottom 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .commute-map .maplibregl-ctrl-bottom-right,
+  .commute-map .maplibregl-ctrl-bottom-left {
+    transition: none;
+  }
 }
 
 @utility safe-bottom {

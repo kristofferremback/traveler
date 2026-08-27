@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import maplibregl, { type LngLatBoundsLike, type Map as MapLibreMap } from "maplibre-gl";
 import type { Feature, FeatureCollection } from "geojson";
 import { Protocol } from "pmtiles";
@@ -433,9 +433,13 @@ export function TransitMap({
    * The sheet reports a new inset on every pixel of a drag, and a camera that refits on
    * each of them fights the hand doing the dragging. The next fit -- another option, a
    * refresh -- uses wherever the sheet ended up.
+   *
+   * Capped here rather than by the caller: a fit whose padding is taller than the
+   * container has nowhere to put the route. The uncapped figure is still what the
+   * attribution is placed against, because that has to clear the sheet at every height.
    */
-  const insetRef = useRef(bottomInset);
-  insetRef.current = bottomInset;
+  const insetRef = useRef(0);
+  insetRef.current = Math.min(bottomInset, Math.round(window.innerHeight * 0.4));
 
   useEffect(() => {
     if (!container.current || map.current) return;
@@ -731,7 +735,9 @@ export function TransitMap({
     : null;
 
   return (
-    <div className={className}>
+    // The sheet's height, published to CSS: MapLibre's own controls are positioned
+    // against it so they sit just clear of whatever is covering the bottom of the map.
+    <div className={className} style={{ "--map-inset": `${bottomInset}px` } as CSSProperties}>
       <div
         ref={container}
         className="size-full"

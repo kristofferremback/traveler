@@ -895,6 +895,38 @@ test.describe("other surfaces", () => {
     await expect(page.getByRole("button", { name: "Ny version, ladda om" })).toBeVisible();
   });
 
+  /**
+   * The regression: the basemap licence was pinned to the tab bar plus a hard 188 px,
+   * which is the sheet at one of its four heights. At any other height it floated in
+   * open map with nothing under it, reading as a stray button rather than a credit.
+   */
+  test("the map's licence hugs the sheet at whatever height the sheet is", async ({ page }) => {
+    await page.goto("/");
+    const sheet = page.getByRole("region", { name: "Resor härifrån" });
+    const licence = page.locator(".commute-map .maplibregl-ctrl-bottom-right");
+    await expect(sheet).toBeVisible();
+    await expect(licence).toBeVisible();
+
+    /** Pixels of open map between the licence and the top of the sheet. */
+    const gap = async () => {
+      const [s, l] = [await sheet.boundingBox(), await licence.boundingBox()];
+      return Math.round(s!.y - (l!.y + l!.height));
+    };
+    // Polled, because both slide when the sheet changes height.
+    const hugsTheSheet = async () => {
+      await expect.poll(gap).toBeLessThan(60);
+      expect(await gap(), "the licence must sit above the sheet, not under it").toBeGreaterThanOrEqual(-1);
+    };
+
+    await hugsTheSheet();
+
+    // A tap on the handle grows the sheet; the licence has to come up with it.
+    const before = (await licence.boundingBox())!.y;
+    await page.getByRole("button", { name: "Visa fler resor" }).click();
+    await expect.poll(async () => (await licence.boundingBox())!.y).toBeLessThan(before);
+    await hugsTheSheet();
+  });
+
   test("the planner survives an API outage without a white screen", async ({ page }) => {
     await page.route("**/api/journeys*", (route) => route.abort());
     await page.goto("/plan?from=9091001000009189&to=9091001000009001");
