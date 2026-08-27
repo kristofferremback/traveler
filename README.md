@@ -230,8 +230,9 @@ a redirect URI on the Google client, so over Tailscale the link is usually the w
 MapLibre, and no map key anywhere. `GET /api/map/style.json?theme=dark|light` answers
 with one of two basemaps.
 
-By default, [OpenFreeMap](https://openfreemap.org): keyless, no quota, no account, dark
-and positron flavours, and their styles carry the OpenStreetMap attribution they owe.
+By default, [OpenFreeMap](https://openfreemap.org): keyless, no quota, no account, the
+`fiord` style in dark and `liberty` in light (chosen for readability outdoors), and their
+styles carry the OpenStreetMap attribution they owe.
 The server caches the style JSON for six hours and passes it through untouched. If it
 cannot be fetched the endpoint answers 502 and the app says the ground is missing —
 there is no quiet second choice, because a basemap nobody picked is worse than a visibly

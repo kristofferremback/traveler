@@ -512,6 +512,20 @@ test.describe("the commute screen", () => {
       .toBe(true);
   });
 
+  test("says on the map which line to board, and when", async ({ page }) => {
+    await page.goto(trip);
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+    // The boarding callout carries the line and a clock time; the alighting one a time
+    // and the stop name. Both live in the map, not the sheet.
+    const callouts = page.locator(".maplibregl-marker").filter({ hasText: /\d{2}:\d{2}/ });
+    await expect(callouts.first()).toBeVisible();
+    expect(await callouts.count()).toBeGreaterThanOrEqual(2);
+    // The badge's text is the designation followed by its screen-reader label.
+    const badge = await rows(page).first().locator("[style*='background-color']").first().innerText();
+    const designation = badge.trim().split("\n")[0]!;
+    await expect(callouts.filter({ hasText: designation }).first()).toBeVisible();
+  });
+
   test("keeps from and to in the URL and swaps them", async ({ page }) => {
     await page.goto(trip);
     const from = page.getByRole("button", { name: /^Från/ });
