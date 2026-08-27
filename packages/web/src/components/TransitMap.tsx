@@ -224,10 +224,11 @@ function minuteLabel(seconds: number): HTMLElement {
   return el;
 }
 
+/** Where the trip starts: a dot with a halo, so it reads as "here" and not as a stop. */
 function placeMarker(): HTMLElement {
   const el = document.createElement("span");
   el.className =
-    "block size-4 rounded-full border-2 border-[var(--color-bg)] bg-[var(--color-accent)] shadow";
+    "block size-5 rounded-full border-[3px] border-white bg-[var(--color-accent)] shadow-[0_0_0_7px_color-mix(in_oklch,var(--color-accent)_28%,transparent),0_2px_6px_rgba(0,0,0,0.4)]";
   el.setAttribute("aria-hidden", "true");
   return el;
 }
@@ -674,19 +675,21 @@ export function TransitMap({
     }
   }, [vehicles.data, vehicleLines, ready]);
 
+  // Every vehicle in view, as dots: only for a screen that asked for all of them. The
+  // commute map opens the same stream for its trip's lines and must not get the lot.
   useEffect(() => {
     const instance = map.current;
     if (!instance || !ready) return;
     const source = instance.getSource(VEHICLE_SOURCE) as maplibregl.GeoJSONSource | undefined;
     source?.setData({
       type: "FeatureCollection",
-      features: (vehicles.data?.vehicles ?? []).map((v) => ({
+      features: (showVehicles ? (vehicles.data?.vehicles ?? []) : []).map((v) => ({
         type: "Feature",
         geometry: { type: "Point", coordinates: [v.lon, v.lat] },
         properties: { line: v.line ?? "" },
       })),
     });
-  }, [vehicles.data, ready]);
+  }, [vehicles.data, showVehicles, ready]);
 
   const vehicleNotice = showVehicles && vehicles.data && !vehicles.data.available
     ? vehicles.data.reason
