@@ -601,6 +601,13 @@ test.describe("the commute screen", () => {
     await expect(branches.locator("li").first()).toBeVisible({ timeout: 120_000 });
     // The ride already on the trip is marked as such and is not a choice.
     await expect(branches.getByText("Den här")).toHaveCount(1);
+    // A board at a stop reads down the clock. Rendered text, not the DOM's: a branch
+    // row hides the leave column it inherits from the list, and that carries a time.
+    const departures = (await branches.locator("li").allInnerTexts()).map(
+      (text) => /(\d{2}):(\d{2})/.exec(text)!,
+    );
+    const asMinutes = departures.map((m) => Number(m[1]) * 60 + Number(m[2]));
+    expect(asMinutes).toEqual([...asMinutes].sort((a, b) => a - b));
     const other = branches.locator("li").filter({ hasNotText: "Den här" }).first();
     const arrival = (await other.textContent())!.match(/Framme (\d{2}:\d{2})/)![1];
     await other.getByRole("button").click();

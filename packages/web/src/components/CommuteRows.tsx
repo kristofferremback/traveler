@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { CommuteOption, JourneyLeg } from "@traveler/shared";
 import { formatTime } from "@/lib/format";
 import { leaveLabel, liveStatus } from "@/lib/trips";
@@ -41,6 +42,7 @@ export function TripRow({
   selected,
   onOpen,
   arriveLabel,
+  note,
   className,
 }: {
   option: CommuteOption;
@@ -49,6 +51,8 @@ export function TripRow({
   onOpen: (option: CommuteOption) => void;
   /** Said instead of the status under the arrival, when the row is one of the branches. */
   arriveLabel?: string | null;
+  /** A line under the ride, for what the times alone do not say. */
+  note?: ReactNode;
   className?: string;
 }) {
   const status = liveStatus(option, now);
@@ -83,7 +87,10 @@ export function TripRow({
           <span className="block text-[11px] text-[var(--color-muted)]">{leave.small}</span>
         ) : null}
       </span>
-      <Ride legs={option.journey.legs} />
+      <span className="min-w-0">
+        <Ride legs={option.journey.legs} />
+        {note ? <span className="mt-0.5 block text-[11px] text-[var(--color-muted)]">{note}</span> : null}
+      </span>
       <span className="text-right text-[15px] font-semibold tabular-nums">
         <span className="sr-only">Framme </span>
         {formatTime(option.arriveAt)}

@@ -1,6 +1,10 @@
 import type { CommuteOption, CommuteStatus, JourneyLeg } from "@traveler/shared";
 import { formatTime } from "./format";
 
+function ms(iso: string): number {
+  return new Date(iso).getTime();
+}
+
 /**
  * What an option is *now*, on the clock, rather than when the answer was fetched.
  *
@@ -10,7 +14,7 @@ import { formatTime } from "./format";
  */
 export function liveStatus(option: CommuteOption, now: number): CommuteStatus {
   if (option.status === "missed") return "missed";
-  if (new Date(option.boardAt).getTime() < now) return "missed";
+  if (ms(option.boardAt) < now) return "missed";
   return option.status;
 }
 
@@ -22,15 +26,70 @@ export function liveStatus(option: CommuteOption, now: number): CommuteStatus {
  */
 export function leaveLabel(option: CommuteOption, now: number): { big: string; small: string | null } {
   if (liveStatus(option, now) === "missed") return { big: `Gick ${formatTime(option.leaveAt)}`, small: null };
-  const minutes = Math.round((new Date(option.leaveAt).getTime() - now) / 60_000);
+  const minutes = Math.round((ms(option.leaveAt) - now) / 60_000);
   if (minutes <= 0) return { big: "Gå nu", small: null };
   if (minutes <= 15) return { big: `${minutes} min`, small: "tills du går" };
   return { big: `Gå ${formatTime(option.leaveAt)}`, small: null };
 }
 
+/** The line a traveller would name when asked what they are about to get on. */
+function boardingLine(option: CommuteOption): string {
+  const first = option.journey.legs.find((leg) => leg.mode !== "WALK");
+  return first?.line?.designation ?? first?.tripId ?? option.id;
+}
+
+/** A ride, named so that the same vehicle on two trips is recognised as the same vehicle. */
+function vehicle(leg: JourneyLeg | undefined, fallback: string): string {
+  if (!leg) return fallback;
+  return leg.tripId ?? `${leg.line?.designation ?? leg.mode}@${leg.origin.scheduled ?? fallback}`;
+}
+
+/**
+ * What is worth showing on the board at one stop, and in which order.
+ *
+ * All of it comes from standing on a platform. One row per vehicle at each end, so
+ * three ways of finishing the same metro ride, or two ways of catching the same 471,
+ * do not eat rows that a different choice could have. Then every line gets its next
+ * departure before any line gets a second one, or the tunnelbana every two minutes
+ * fills the board and the 480C you were looking for never appears. Then it reads down
+ * the clock, because that is the order you board in.
+ */
+export function board(options: CommuteOption[], limit: number): CommuteOption[] {
+  const rides = (option: CommuteOption) => option.journey.legs.filter((leg) => leg.mode !== "WALK");
+
+  // Same vehicle out of here, keep the way home that lands first.
+  const departures = new Map<string, CommuteOption>();
+  for (const option of [...options].sort((a, b) => ms(a.arriveAt) - ms(b.arriveAt))) {
+    const key = vehicle(rides(option)[0], option.id);
+    if (!departures.has(key)) departures.set(key, option);
+  }
+  // Same vehicle into there, keep the one you can stay put for longest. Taking the 13
+  // or the 19 to Slussen for the same 471 is one choice, and the board has better uses
+  // for the row.
+  const arrivals = new Map<string, CommuteOption>();
+  for (const option of [...departures.values()].sort((a, b) => ms(b.boardAt) - ms(a.boardAt))) {
+    const key = vehicle(rides(option).at(-1), option.id);
+    if (!arrivals.has(key)) arrivals.set(key, option);
+  }
+
+  const seen = new Map<string, number>();
+  return [...arrivals.values()]
+    .sort((a, b) => ms(a.boardAt) - ms(b.boardAt) || ms(a.arriveAt) - ms(b.arriveAt))
+    .map((option, order) => {
+      const line = boardingLine(option);
+      const round = seen.get(line) ?? 0;
+      seen.set(line, round + 1);
+      return { option, round, order };
+    })
+    .sort((a, b) => a.round - b.round || a.order - b.order)
+    .slice(0, limit)
+    .sort((a, b) => a.order - b.order)
+    .map((p) => p.option);
+}
+
 function at(leg: JourneyLeg, end: "origin" | "destination"): number | null {
   const iso = leg[end].expected ?? leg[end].scheduled;
-  return iso ? new Date(iso).getTime() : null;
+  return iso ? ms(iso) : null;
 }
 
 /**
@@ -114,5 +173,5 @@ export function boardable(parent: CommuteOption, index: number, branches: Commut
   const arrival = arrivalAtLeg(parent.journey.legs, index);
   const firstRide = !parent.journey.legs.slice(0, index).some((leg) => leg.mode !== "WALK");
   if (firstRide || arrival === null) return branches;
-  return branches.filter((b) => new Date(b.boardAt).getTime() >= arrival);
+  return branches.filter((b) => ms(b.boardAt) >= arrival);
 }

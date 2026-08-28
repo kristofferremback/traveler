@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CommuteOption, JourneyLeg } from "@traveler/shared";
-import { arrivalAtLeg, boardable, leaveLabel, liveStatus, sameRide, splice } from "../trips";
+import { arrivalAtLeg, board, boardable, leaveLabel, liveStatus, sameRide, splice } from "../trips";
 
 const T = (hhmm: string) => `2026-08-28T${hhmm}:00+02:00`;
 const ms = (hhmm: string) => new Date(T(hhmm)).getTime();
@@ -136,6 +136,55 @@ describe("boardable", () => {
 
   test("at the first stop, everything: leaving home earlier is the traveller's call", () => {
     expect(boardable(home, 0, [early, late]).map((o) => o.id)).toEqual(["early", "late"]);
+  });
+});
+
+describe("board", () => {
+  /** One departure from Cityterminalen, named by the line and the minute it goes. */
+  const dep = (line: string, at: string, arrive: string, tripId = `${line}-${at}`) =>
+    option([ride(line, "Cityterminalen", at, "Nacka trafikplats", arrive, tripId)], {
+      id: `${line}@${at}`,
+      arriveAt: T(arrive),
+    });
+
+  test("two ways of catching the same onward bus is one row, the one you can wait out", () => {
+    const via = (metro: string, at: string) =>
+      option(
+        [
+          ride(metro, "T-Centralen", at, "Slussen", "17:30", `trip-${metro}`),
+          ride("471", "Slussen", "17:33", "Jarlaberg", "17:56", "trip-471"),
+        ],
+        { id: `${metro}@${at}`, arriveAt: T("17:59") },
+      );
+    expect(board([via("18", "17:19"), via("19", "17:21")], 8).map((o) => o.id)).toEqual(["19@17:21"]);
+  });
+
+  test("one row per vehicle, keeping the way home that lands first", () => {
+    const legs = (arrive: string) => [
+      ride("19", "T-Centralen", "17:15", "Slussen", "17:28", "trip-19"),
+      ride("443", "Slussen", "17:30", "Jarlaberg", arrive),
+    ];
+    const slow = option(legs("17:59"), { id: "slow", arriveAt: T("17:59") });
+    const quick = option(legs("17:49"), { id: "quick", arriveAt: T("17:49") });
+    expect(board([slow, quick], 8).map((o) => o.id)).toEqual(["quick"]);
+  });
+
+  test("every line before any line twice, then down the clock", () => {
+    // The tunnelbana every two minutes is what buried the C buses on the real board.
+    const options = [
+      dep("13", "17:10", "17:48"),
+      dep("13", "17:12", "17:50"),
+      dep("13", "17:14", "17:52"),
+      dep("442C", "17:18", "17:41"),
+      dep("480C", "17:25", "17:50"),
+    ];
+    expect(board(options, 4).map((o) => o.id)).toEqual(["13@17:10", "13@17:12", "442C@17:18", "480C@17:25"]);
+    expect(board(options, 3).map((o) => o.id)).toEqual(["13@17:10", "442C@17:18", "480C@17:25"]);
+  });
+
+  test("keeps what fits when nothing has to be dropped", () => {
+    const options = [dep("480C", "17:25", "17:50"), dep("442C", "17:18", "17:41")];
+    expect(board(options, 8).map((o) => o.id)).toEqual(["442C@17:18", "480C@17:25"]);
   });
 });
 
