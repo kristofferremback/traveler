@@ -5,7 +5,7 @@ import { ChevronLeft, Footprints, GitBranch } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatDuration, formatTime } from "@/lib/format";
 import { modeColor } from "@/lib/modes";
-import { arrivalAtLeg, boardable, leaveLabel, liveStatus, sameRide, splice } from "@/lib/trips";
+import { arrivalAtLeg, board, boardable, leaveLabel, liveStatus, sameRide, splice } from "@/lib/trips";
 import { LineBadge } from "./LineBadge";
 import { TripRow } from "./CommuteRows";
 import { Badge } from "./ui/badge";
@@ -13,10 +13,8 @@ import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
 import { cn } from "@/lib/utils";
 
-/** How many other trips from a stop are shown. Enough to pick from, few enough to read on a platform. */
-const MAX_BRANCHES = 4;
-/** How far before the leg's departure branches are planned from. */
-const BRANCH_LEAD_MS = 10 * 60_000;
+/** How many other trips from a stop are shown. A boardful, not a timetable. */
+const MAX_BRANCHES = 8;
 
 function minutes(seconds: number): number {
   return Math.max(1, Math.round(seconds / 60));
@@ -102,17 +100,14 @@ function Branches({
   const leg = parent.journey.legs[index]!;
   const from = leg.origin.siteGid!;
   /**
-   * Planned from a little before the leg leaves, so the ride already on the trip is in
-   * the answer with the ones around it; from now, when that is later, so someone
-   * standing at the stop after their bus has gone sees what comes next. Fixed when the
-   * branches open rather than following the clock, so the answer stays put while it is
-   * being read.
+   * The board starts when the traveller can be standing here: now at the stop they set
+   * off from, their arrival at any stop further along. Not the leg's own departure --
+   * the reason to ask is the bus that goes before it. Fixed when the branches open
+   * rather than following the clock, so the answer stays put while it is being read.
    */
-  const [when] = useState(() => {
-    const departs = leg.origin.expected ?? leg.origin.scheduled;
-    const around = departs ? new Date(departs).getTime() - BRANCH_LEAD_MS : Date.now();
-    return new Date(Math.max(Date.now(), around)).toISOString();
-  });
+  const [when] = useState(() =>
+    new Date(Math.max(Date.now(), arrivalAtLeg(parent.journey.legs, index) ?? 0)).toISOString(),
+  );
   const branches = useQuery({
     queryKey: ["branches", from, to, when],
     queryFn: ({ signal }) => api.commute({ from, to, when, paths: "all" }, signal),
@@ -121,11 +116,17 @@ function Branches({
     refetchOnReconnect: false,
   });
 
-  const shown = branches.data
-    ? boardable(parent, index, branches.data.options)
-        .filter((b) => liveStatus(b, now) !== "missed" || sameRide(parent, index, b))
-        .slice(0, MAX_BRANCHES)
-    : [];
+  // The ride already on the trip holds its place whatever else is on the board: it is
+  // the row that says "this one", and the answer is unreadable without it.
+  const reachable = branches.data ? boardable(parent, index, branches.data.options) : [];
+  const mine = reachable.find((b) => sameRide(parent, index, b));
+  const others = board(
+    reachable.filter((b) => !sameRide(parent, index, b) && liveStatus(b, now) !== "missed"),
+    MAX_BRANCHES - (mine ? 1 : 0),
+  );
+  const shown = (mine ? [mine, ...others] : others).sort(
+    (a, b) => new Date(a.boardAt).getTime() - new Date(b.boardAt).getTime(),
+  );
 
   return (
     <div className="mt-2 border-l-[3px] border-[var(--color-accent)] pl-2" aria-live="polite">
@@ -151,16 +152,20 @@ function Branches({
       ) : (
         <ul aria-label={`Resor från ${leg.origin.name}`} className="divide-y divide-[var(--color-border)]">
           {shown.map((branch) => {
-            const mine = sameRide(parent, index, branch);
+            const ours = branch === mine;
             const option = splice(parent, index, branch);
+            // One SL site can span platforms a walk apart -- Cityterminalen carries
+            // T-Centralen's metro -- so a row whose ride starts somewhere else says where.
+            const boards = branch.journey.legs.find((l) => l.mode !== "WALK")?.origin.name ?? null;
             return (
               <li key={branch.id}>
                 <TripRow
                   option={option}
                   now={now}
-                  selected={mine}
-                  onOpen={mine ? () => {} : onPick}
-                  arriveLabel={mine ? "Den här" : null}
+                  selected={ours}
+                  onOpen={ours ? () => {} : onPick}
+                  arriveLabel={ours ? "Den här" : null}
+                  note={boards && boards !== leg.origin.name ? `från ${boards}` : null}
                   className="grid-cols-[1fr_auto] px-2 [&>span:first-child]:hidden"
                 />
               </li>
