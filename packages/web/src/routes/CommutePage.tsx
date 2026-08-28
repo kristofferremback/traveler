@@ -6,8 +6,8 @@ import { api, ApiError } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import { useOverlay } from "@/lib/overlay";
 import { BottomSheet, PEEK_HEIGHT } from "@/components/BottomSheet";
-import { CommuteCards } from "@/components/CommuteCards";
-import { CommuteHero } from "@/components/CommuteHero";
+import { CommuteRows } from "@/components/CommuteRows";
+import { TripView } from "@/components/TripView";
 import { PlaceSearch, type PlaceChoice } from "@/components/PlaceSearch";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
 import { TripControl } from "@/components/TripControl";
@@ -116,6 +116,8 @@ export function CommutePage() {
    * of a pocket does not fire a location request before anyone tapped anything.
    */
   const [armed, setArmed] = useState(false);
+  /** The last fix, so a branch planned to "Min position" can say where that is. */
+  const hereRef = useRef<Position | null>(null);
 
   const commute = useQuery({
     queryKey: ["commute", fromRef, toRef, time?.when ?? null, time?.arriveBy ?? false],
@@ -127,6 +129,7 @@ export function CommutePage() {
       if (needsPosition) {
         try {
           here = await currentPosition();
+          hereRef.current = here;
           setPositionDenied(false);
         } catch {
           // Denied, unavailable or timed out all mean the same thing here: the chip has
@@ -182,13 +185,24 @@ export function CommutePage() {
   }, [commute.data, fromRef, toRef, time?.arriveBy]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /**
+   * Trips the traveller built by branching, by id.
+   *
+   * Not in the list: a branch is one trip's variation, welded onto it at a stop, and it
+   * belongs under that trip rather than among the engine's answers. Held here so it can
+   * be the selected one on the map and reopened from the list's selection.
+   */
+  const [picks, setPicks] = useState<Map<string, CommuteOption>>(() => new Map());
   const selected: CommuteOption | null =
-    options.find((o) => o.id === selectedId) ?? options[0] ?? null;
+    (selectedId ? (picks.get(selectedId) ?? options.find((o) => o.id === selectedId)) : null) ??
+    options[0] ??
+    null;
 
   // A new pair of places is a new list; keeping the old selection would draw a trip
   // that is no longer on screen. A new time keeps it: the merged list still has it.
   useEffect(() => {
     setSelectedId(null);
+    setPicks(new Map());
     paths.current = "recommended";
   }, [fromRef, toRef, time?.arriveBy]);
 
@@ -227,8 +241,28 @@ export function CommutePage() {
    * Choosing a place replaces that entry with the new trip: the picker never survives in
    * the history it opened from, and Back from the result goes to the trip before it.
    */
-  const { open: picker, show: openPicker, close: closePicker, settle } =
-    useOverlay<"from" | "to" | "time">();
+  const { open: overlay, show: openOverlay, close: closeOverlay, settle } = useOverlay<string>();
+  const picker = overlay === "from" || overlay === "to" || overlay === "time" ? overlay : null;
+  const openPicker = openOverlay as (which: "from" | "to" | "time") => void;
+  const closePicker = closeOverlay;
+
+  /**
+   * The opened trip is a history entry too, so Back on the phone returns to the list
+   * with nothing refetched. Its id rides in the history state rather than the URL: a
+   * shared link is the commute, not one answer to it that will have expired.
+   */
+  const openedId = overlay?.startsWith("trip:") ? overlay.slice("trip:".length) : null;
+  const opened = openedId ? (picks.get(openedId) ?? options.find((o) => o.id === openedId) ?? null) : null;
+  const openTrip = (option: CommuteOption) => {
+    select(option);
+    openOverlay(`trip:${option.id}`);
+  };
+  /** A branch replaces the trip it was opened from, in place, and is drawn at once. */
+  const pickBranch = (option: CommuteOption) => {
+    setPicks((prev) => new Map(prev).set(option.id, option));
+    setSelectedId(option.id);
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: { overlay: `trip:${option.id}` } });
+  };
 
   const setSearch = (
     next: Partial<Record<"from" | "to" | "when" | "arriveBy", string | null>>,
@@ -270,6 +304,9 @@ export function CommutePage() {
 
   const fromLabel = useRefLabel(fromRef, saved, positionDenied);
   const toLabel = useRefLabel(toRef, saved, positionDenied);
+  /** The destination as the API takes it, for branches. Null until a fix exists, if one is needed. */
+  const toApi =
+    toRef === "me" ? (hereRef.current ? `${hereRef.current.lat},${hereRef.current.lon}` : null) : toRef;
 
   const updatedSecondsAgo = commute.dataUpdatedAt
     ? Math.max(0, Math.round((now - commute.dataUpdatedAt) / 1000))
@@ -383,18 +420,20 @@ export function CommutePage() {
             </ul>
           ) : null}
 
-          {selected ? <CommuteHero option={selected} now={now} /> : null}
-
-          {options.length > 0 ? (
-            <CommuteCards
-              options={options}
-              selectedId={selected?.id ?? null}
+          {opened && toApi ? (
+            <TripView
+              option={opened}
+              destinationName={commute.data?.toLabel ?? commute.data?.to?.name ?? toLabel}
+              to={toApi}
               now={now}
-              onSelect={select}
+              onBack={closeOverlay}
+              onPick={pickBranch}
             />
+          ) : options.length > 0 ? (
+            <CommuteRows options={options} selectedId={selected?.id ?? null} now={now} onOpen={openTrip} />
           ) : null}
 
-          {commute.isSuccess && !time?.arriveBy ? (
+          {commute.isSuccess && !opened && !time?.arriveBy ? (
             <Button
               type="button"
               variant="outline"

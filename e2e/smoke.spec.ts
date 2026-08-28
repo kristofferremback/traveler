@@ -539,14 +539,17 @@ test.describe("the commute screen", () => {
     await open(page);
 
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
-    // Exactly one recommendation among the cards: two would be a contradiction, none
+    // Exactly one recommendation among the rows: two would be a contradiction, none
     // would leave the traveller to rank the list themselves.
     await expect(rows(page).getByText("Rekommenderad")).toHaveCount(1);
-    // Both halves of the decision are on the card: when to stand up, and when you land.
+    // The whole decision is on the row: when to stand up, when the first ride leaves
+    // and on what, and when you land.
     await expect(rows(page).first()).toContainText(/(Gå nu|\d+ min|Gå \d{2}:\d{2}|Gick \d{2}:\d{2})/);
+    await expect(rows(page).first()).toContainText(/\d{2}:\d{2}.*→.*\d{2}:\d{2}/);
     await expect(rows(page).first()).toContainText(/Framme \d{2}:\d{2}/);
-    // The hero is the recommendation until something else is chosen.
-    await expect(page.getByRole("region", { name: "Vald resa" })).toContainText("Rekommenderad");
+    // It is the one drawn until something else is chosen; nothing is open yet.
+    await expect(rows(page).first().getByRole("button")).toHaveAttribute("aria-current", "true");
+    await expect(page.getByRole("region", { name: "Vald resa" })).toHaveCount(0);
   });
 
   test("draws the option that was tapped", async ({ page }) => {
@@ -559,15 +562,51 @@ test.describe("the commute screen", () => {
     await expect(rows(page).nth(1)).toBeVisible({ timeout: 120_000 });
 
     const second = rows(page).nth(1).getByRole("button").first();
+    const label = (await second.innerText()).split("\n")[0];
     await second.click();
-    await expect(second).toHaveAttribute("aria-pressed", "true");
-    // Selecting makes it the hero, whose legs are the stop-by-stop detail.
-    await expect(page.getByRole("region", { name: "Vald resa" }).locator("li").first()).toBeVisible();
+    // Tapping opens the trip, stop by stop, in place of the list.
+    const trip = page.getByRole("region", { name: "Vald resa" });
+    await expect(trip.locator("li").first()).toBeVisible();
+    await expect(trip.getByRole("button", { name: "Fler val härifrån" }).first()).toBeVisible();
     // The geometry for a row that is not the recommended one is not in the first
     // response, so drawing it has to go and fetch it rather than draw nothing.
     await expect
       .poll(() => asked.some((url) => url.includes("paths=all")), { timeout: 30_000 })
       .toBe(true);
+    // Back is the phone's Back: the list is as it was, with the opened trip still the
+    // drawn one, and nothing was asked again.
+    const before = asked.length;
+    await page.goBack();
+    await expect(rows(page).nth(1).getByRole("button")).toHaveAttribute("aria-current", "true");
+    await expect(rows(page).nth(1)).toContainText(label!);
+    expect(asked.length).toBe(before);
+  });
+
+  test("asks what else goes from a stop, by the stop's own id, and welds the pick on", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/commute")) asked.push(decodeURIComponent(r.url()));
+    });
+    await open(page);
+    await rows(page).first().getByRole("button").click();
+    const trip = page.getByRole("region", { name: "Vald resa" });
+    const more = trip.getByRole("button", { name: "Fler val härifrån" }).first();
+    await more.click();
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    // Planned from the stop by its journey-planner id, to the same saved place.
+    await expect
+      .poll(() => asked.find((u) => u.includes("from=9091") && u.includes(`to=place:${homeId}`)), { timeout: 60_000 })
+      .toBeTruthy();
+    const branches = trip.getByRole("list", { name: /^Resor från / });
+    await expect(branches.locator("li").first()).toBeVisible({ timeout: 120_000 });
+    // The ride already on the trip is marked as such and is not a choice.
+    await expect(branches.getByText("Den här")).toHaveCount(1);
+    const other = branches.locator("li").filter({ hasNotText: "Den här" }).first();
+    const arrival = (await other.textContent())!.match(/Framme (\d{2}:\d{2})/)![1];
+    await other.getByRole("button").click();
+    // The pick is now the opened trip: same header shape, its own arrival time.
+    await expect(trip).toContainText(`framme ${arrival}`);
+    await expect(trip.getByRole("button", { name: "Fler val härifrån" }).first()).toBeVisible();
   });
 
   test("says on the map which line to board, and when", async ({ page }) => {
@@ -687,10 +726,10 @@ test.describe("the commute screen", () => {
 
     // Every row answers the question asked: on the ground before five.
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
-    const arrivals = await rows(page).locator("text=/Framme \\d{2}:\\d{2}/").allInnerTexts();
+    const arrivals = await rows(page).locator("text=/Framme \\d{2}:\\d{2}/").allTextContents();
     expect(arrivals.length).toBeGreaterThan(0);
     for (const text of arrivals) {
-      const [h, m] = text.replace("Framme ", "").split(":").map(Number);
+      const [h, m] = /Framme (\d{2}):(\d{2})/.exec(text)!.slice(1).map(Number);
       expect(h! * 60 + m!).toBeLessThanOrEqual(17 * 60);
     }
 
@@ -722,18 +761,19 @@ test.describe("the commute screen", () => {
   test("Tidigare moves the planning time back ten minutes and Back undoes it", async ({ page }) => {
     await open(page);
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
-    const before = Date.now();
-
     const firstBefore = await rows(page).first().innerText();
     const countBefore = await rows(page).count();
     await page.getByRole("button", { name: "Tidigare" }).click();
+    // Read after the click: the button sits under the whole list, and scrolling to it
+    // takes long enough to eat into a "ten minutes before the click" measured before.
+    const clicked = Date.now();
     await expect(page).toHaveURL(/when=/);
     // Asking for earlier adds to the list; what was on screen stays on screen.
     await expect(rows(page).filter({ hasText: firstBefore.split("\n")[0]! }).first()).toBeVisible();
     await expect.poll(() => rows(page).count(), { timeout: 60_000 }).toBeGreaterThanOrEqual(countBefore);
     const when = new URL(page.url()).searchParams.get("when")!;
-    const shift = before - new Date(when).getTime();
-    expect(shift).toBeGreaterThanOrEqual(10 * 60_000 - 1000);
+    const shift = clicked - new Date(when).getTime();
+    expect(shift).toBeGreaterThanOrEqual(10 * 60_000);
     expect(shift).toBeLessThan(11 * 60_000);
     await expect(page.getByRole("button", { name: /^Avgång/ })).toBeVisible();
     // Still answering: the rows planned from ten minutes ago include what is live now.
