@@ -151,6 +151,8 @@ export const JourneyLeg = z.object({
     lat: z.number().nullable().default(null),
     lon: z.number().nullable().default(null),
     siteId: z.number().int().nullable().default(null),
+    /** The journey planner's id for the same stop, so a trip can be planned from it. */
+    siteGid: z.string().nullable().default(null),
     scheduled: Instant.nullable().default(null),
     expected: Instant.nullable().default(null),
   }),
@@ -160,6 +162,8 @@ export const JourneyLeg = z.object({
     lat: z.number().nullable().default(null),
     lon: z.number().nullable().default(null),
     siteId: z.number().int().nullable().default(null),
+    /** The journey planner's id for the same stop, so a trip can be planned from it. */
+    siteGid: z.string().nullable().default(null),
     scheduled: Instant.nullable().default(null),
     expected: Instant.nullable().default(null),
   }),

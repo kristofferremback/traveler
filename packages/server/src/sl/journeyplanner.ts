@@ -324,7 +324,8 @@ function toLeg(leg: EfaLeg, index: number): JourneyLeg {
       platform: platformOf(origin, mode),
       lat: origin?.coord?.[0] ?? null,
       lon: origin?.coord?.[1] ?? null,
-      siteId: null,
+      siteId: null, // Filled in from the local catalog by the route layer.
+      siteGid: null,
       scheduled: toInstant(origin?.departureTimePlanned ?? null),
       expected: toInstant(origin?.departureTimeEstimated ?? null),
     },
@@ -334,6 +335,7 @@ function toLeg(leg: EfaLeg, index: number): JourneyLeg {
       lat: destination?.coord?.[0] ?? null,
       lon: destination?.coord?.[1] ?? null,
       siteId: null,
+      siteGid: null,
       scheduled: toInstant(destination?.arrivalTimePlanned ?? null),
       expected: toInstant(destination?.arrivalTimeEstimated ?? null),
     },
