@@ -404,6 +404,16 @@ export type TripParams = {
   maxWalkMinutes?: number;
   /** Only trips at or after the requested time. By default SL includes one before it. */
   oneDirection?: boolean;
+  /**
+   * How long to wait, and how many times to try again.
+   *
+   * A single planned trip is worth waiting the full default for: there is nothing else
+   * to show if it fails. A commute is a dozen of these at once and the traveller waits
+   * for the slowest, so the engine gives each one a tighter budget and accepts losing a
+   * stop it can name rather than holding the screen for all of them.
+   */
+  timeoutMs?: number;
+  retries?: number;
 };
 
 function endpoint(kind: "origin" | "destination", e: TripEndpoint): Record<string, string> {
@@ -450,7 +460,8 @@ export async function trips(params: TripParams): Promise<TripResult> {
       ...(params.oneDirection ? { calc_one_direction: true } : {}),
       ...motFlags(params.modes),
     },
-    timeoutMs: 15_000,
+    timeoutMs: params.timeoutMs ?? 15_000,
+    ...(params.retries !== undefined ? { retries: params.retries } : {}),
   });
 
   const journeys = (res.journeys ?? [])
