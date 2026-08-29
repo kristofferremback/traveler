@@ -1,6 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import type { CommuteOption, JourneyLeg } from "@traveler/shared";
-import { arrivalAtLeg, board, boardFrom, boardable, leaveLabel, liveStatus, sameRide, splice } from "../trips";
+import {
+  accumulate,
+  arrivalAtLeg,
+  board,
+  boardFrom,
+  boardable,
+  leaveLabel,
+  liveStatus,
+  sameRide,
+  splice,
+} from "../trips";
 
 const T = (hhmm: string) => `2026-08-28T${hhmm}:00+02:00`;
 const ms = (hhmm: string) => new Date(T(hhmm)).getTime();
@@ -136,6 +146,37 @@ describe("boardFrom", () => {
   test("further along the trip it starts when the traveller gets there", () => {
     expect(boardFrom(home, 1, ms("07:00"))).toBe(ms("08:38"));
     expect(boardFrom(home, 1, ms("08:50"))).toBe(ms("08:50"));
+  });
+});
+
+describe("accumulate", () => {
+  const trip = (id: string, dep: string, status: CommuteOption["status"] = "ok") =>
+    option([ride("443", "Nacka strand", dep, "Slussen", "19:04")], { id, status });
+
+  const tonight = { key: "me|hem|arr|19:30", options: [trip("a", "18:50"), trip("b", "18:55")] };
+
+  test("a different time is a different question, and its answer stands alone", () => {
+    const monday = [trip("m1", "08:15"), trip("m2", "08:16")];
+    const after = accumulate(tonight, "me|hem|arr|mon-09:00", monday, false);
+    expect(after.options.map((o) => o.id)).toEqual(["m1", "m2"]);
+  });
+
+  test("Tidigare keeps what is on screen and puts the earlier answer above it", () => {
+    const earlier = [trip("e1", "18:40"), trip("a", "18:50")];
+    const after = accumulate(tonight, "me|hem|dep|18:40", earlier, true);
+    // "a" comes from the fresh answer, not the kept copy, so its times are the new ones.
+    expect(after.options.map((o) => o.id)).toEqual(["e1", "a", "b"]);
+  });
+
+  test("re-asking the same question merges without being told to", () => {
+    const after = accumulate(tonight, tonight.key, [trip("c", "19:00")], false);
+    expect(after.options.map((o) => o.id)).toEqual(["c", "a", "b"]);
+  });
+
+  test("what has gone sinks to the bottom wherever it came from", () => {
+    const previous = { key: "k", options: [trip("gone", "18:20", "missed"), trip("b", "18:55")] };
+    const after = accumulate(previous, "k", [trip("late", "18:10", "missed"), trip("c", "19:00")], false);
+    expect(after.options.map((o) => o.id)).toEqual(["c", "b", "late", "gone"]);
   });
 });
 

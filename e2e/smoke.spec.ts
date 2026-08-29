@@ -771,6 +771,50 @@ test.describe("the commute screen", () => {
     await expect(pill).toHaveText("Nu");
   });
 
+  test("a new time replaces the old answer instead of stacking on top of it", async ({ page }) => {
+    // Regression: the running list that "Tidigare" builds was keyed on the two places
+    // and on deadline-versus-departure, but not on the time itself. Moving a deadline
+    // left the previous answer's departures sitting underneath the new one's, marked
+    // with their own "Rekommenderad".
+    await page.goto(trip);
+    const pill = page.getByRole("button", { name: /^Nu$|^Avgång|^Framme senast/ });
+    const picker = page.getByRole("dialog", { name: "Välj tid" });
+
+    /** Set the deadline, waiting the dialog open and shut around it. */
+    const deadline = async (hour: number, first: boolean) => {
+      await pill.click();
+      await expect(picker).toBeVisible();
+      if (first) await picker.getByRole("button", { name: "Framme senast" }).click();
+      await picker.getByLabel("Senast framme").fill(localTomorrowAt(hour, 0));
+      await picker.getByRole("button", { name: "Klar" }).click();
+      await expect(picker).toBeHidden();
+    };
+
+    await deadline(9, true);
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+
+    await deadline(17, false);
+    await expect(pill).toHaveText("Framme senast imorgon 17:00");
+
+    // Every row has to answer the deadline just set. The engine reaches three hours
+    // back from it, so nothing legitimate lands before two; a row landing before ten
+    // is left over from the nine o'clock question.
+    const arrivals = async () => {
+      const texts = await rows(page).locator("text=/Framme \\d{2}:\\d{2}/").allTextContents();
+      return texts.map((t) => {
+        const [h, m] = /Framme (\d{2}):(\d{2})/.exec(t)!.slice(1).map(Number);
+        return h! * 60 + m!;
+      });
+    };
+    await expect
+      .poll(async () => {
+        const times = await arrivals();
+        return times.length > 0 && times.every((t) => t >= 10 * 60);
+      }, { timeout: 120_000 })
+      .toBe(true);
+    await expect(rows(page).getByText("Rekommenderad")).toHaveCount(1);
+  });
+
   test("the sheet tucks to its handle and a tap brings it back", async ({ page }) => {
     await open(page);
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });

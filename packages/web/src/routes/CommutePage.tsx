@@ -5,6 +5,7 @@ import type { CommuteOption, SavedPlace } from "@traveler/shared";
 import { api, ApiError } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import { useOverlay } from "@/lib/overlay";
+import { accumulate, type Answered } from "@/lib/trips";
 import { BottomSheet, PEEK_HEIGHT } from "@/components/BottomSheet";
 import { CommuteRows } from "@/components/CommuteRows";
 import { TripView } from "@/components/TripView";
@@ -160,29 +161,27 @@ export function CommutePage() {
   });
 
   /**
-   * Tidigare adds to the list rather than replacing it.
+   * Tidigare adds to the list rather than replacing it, and nothing else does.
    *
    * Each step back is a fresh answer from the engine, planned from ten minutes earlier:
    * it holds what was missed since then and drops the far end of the horizon. The
-   * traveller pressed it to see more, not to lose the trips already on screen, so the
-   * answers are merged: the newest response leads, in its own order, and anything only
-   * an earlier response knew is kept after it. Missed options stay last. A new pair of
-   * ends or a switch to a deadline starts over.
+   * traveller pressed it to see more, not to lose the trips already on screen, so those
+   * two answers are merged. Every other change of time is a different question, and its
+   * answer replaces the old one -- a deadline moved from tonight to Monday morning left
+   * tonight's buses sitting under Monday's until this was a flag rather than a gap in
+   * the key.
    */
-  const seen = useRef<{ key: string; options: CommuteOption[] }>({ key: "", options: [] });
+  const extending = useRef(false);
+  const seen = useRef<Answered>({ key: "", options: [] });
   const options = useMemo(() => {
-    const key = `${fromRef}|${toRef}|${time?.arriveBy ? "arr" : "dep"}`;
-    const fresh = commute.data?.options ?? [];
-    if (seen.current.key !== key) seen.current = { key, options: [] };
-    if (!commute.data) return seen.current.options;
-    const ids = new Set(fresh.map((o) => o.id));
-    const kept = seen.current.options.filter((o) => !ids.has(o.id));
-    const merged = [...fresh, ...kept];
-    const live = merged.filter((o) => o.status !== "missed");
-    const missed = merged.filter((o) => o.status === "missed");
-    seen.current = { key, options: [...live, ...missed] };
+    // Placeholder data is the previous question's answer, held on screen while this one
+    // loads. Shown, never merged: folding it in would make it part of the new list.
+    if (!commute.data || commute.isPlaceholderData) return seen.current.options;
+    const key = `${fromRef}|${toRef}|${time?.arriveBy ? "arr" : "dep"}|${time?.when ?? "now"}`;
+    seen.current = accumulate(seen.current, key, commute.data.options, extending.current);
+    extending.current = false;
     return seen.current.options;
-  }, [commute.data, fromRef, toRef, time?.arriveBy]);
+  }, [commute.data, commute.isPlaceholderData, fromRef, toRef, time?.arriveBy, time?.when]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /**
@@ -292,6 +291,7 @@ export function CommutePage() {
    */
   const earlier = () => {
     setArmed(true);
+    extending.current = true;
     const from = time ? new Date(time.when).getTime() : Date.now();
     navigate({
       pathname: location.pathname,
