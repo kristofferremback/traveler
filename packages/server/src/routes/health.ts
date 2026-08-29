@@ -16,16 +16,33 @@ export const health = new Hono();
 
 const startedAt = Date.now();
 
+/**
+ * The passes a catalog sync makes, in the order it makes them. Health reports on all
+ * four rather than only on `sites`: they fail independently, and readiness turns on the
+ * derived one. Reporting the first pass alone let health say "ok, last sync ok" about a
+ * container that /api/ready was answering 503 for, which is a bad hour to hand someone.
+ */
+const PASSES = ["sites", "stop_points", "lines", "derived"] as const;
+
 function catalogStatus(): CatalogStatus {
   const counts = catalogCounts();
-  const last = lastSync("sites");
+  const runs = PASSES.map((entity) => ({ entity, run: lastSync(entity) }));
+  const never = runs.some(({ run }) => !run);
+  const failed = runs.find(({ run }) => run && run.status !== "ok");
+  // The counts belong to the pass that fills the stop list; the other three are its
+  // parts and its index.
+  const sites = runs[0]!.run;
+  const finished = runs
+    .map(({ run }) => run?.finished_at ?? null)
+    .filter((at): at is string => at !== null)
+    .sort();
   return {
     ...counts,
-    lastSyncAt: last?.finished_at ?? null,
-    lastSyncStatus: last ? (last.status === "ok" ? "ok" : "failed") : "never",
-    lastSyncError: last?.error ?? null,
-    lastChange: last
-      ? { added: last.added, updated: last.updated, removed: last.removed }
+    lastSyncAt: finished.at(-1) ?? null,
+    lastSyncStatus: never ? "never" : failed ? "failed" : "ok",
+    lastSyncError: failed ? `${failed.entity}: ${failed.run!.error ?? "failed"}` : null,
+    lastChange: sites
+      ? { added: sites.added, updated: sites.updated, removed: sites.removed }
       : null,
     syncRunning: isSyncRunning(),
   };
