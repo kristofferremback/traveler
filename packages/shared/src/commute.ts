@@ -154,6 +154,21 @@ export const CommuteQuery = CommuteSettingsOverrides.extend({
    * a caller with no map at all.
    */
   paths: z.enum(["recommended", "all", "none"]).default("recommended"),
+  /**
+   * Which modes may be ridden, as an allow-list. Absent means all of them.
+   *
+   * An allow-list rather than a block-list because it is the question travellers ask
+   * ("just the boat"), and because both shapes reduce to the same thing: everything
+   * except the bus is every other mode. It is not only passed to SL. The engine asks
+   * about the stops nearest the quiet end, and the pier is further from Kris's door
+   * than eleven bus stops, so a boat-only search that filtered the answers instead of
+   * the question would spend its whole budget on buses and come back empty.
+   */
+  modes: z
+    .string()
+    .optional()
+    .transform((s) => (s ? s.split(",").filter(Boolean) : undefined))
+    .pipe(z.array(TransportMode).min(1).optional()),
 });
 export type CommuteQuery = z.infer<typeof CommuteQuery>;
 

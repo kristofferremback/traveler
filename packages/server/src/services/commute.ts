@@ -8,6 +8,7 @@ import type {
   JourneyLeg,
   NeighbourStop,
   Place,
+  TransportMode,
 } from "@traveler/shared";
 import { cached } from "../db/cache.ts";
 import { trips, type TripEndpoint } from "../sl/journeyplanner.ts";
@@ -404,6 +405,34 @@ function withPaths(options: CommuteOption[], mode: CommuteQuery["paths"]): Commu
   });
 }
 
+/**
+ * The sites to ask SL about: one entry per site, nearest on foot first, at most
+ * `MAX_ENUMERATED_SITES` of them, and only those you would board.
+ *
+ * `modes` filters the stop points before the cut rather than the answers afterwards,
+ * which is the whole difference between a working boat filter and an empty screen: the
+ * Nacka strand pier is further from the door than eleven bus stops, so filtering later
+ * would spend the entire budget asking about buses that were never allowed. It also
+ * makes the pier the site's representative stop, so the walk the request is shifted by
+ * is the walk down to the boat rather than the walk to the shelter.
+ */
+export function sitesToAsk(
+  stops: NeighbourStop[],
+  side: Side,
+  modes?: TransportMode[],
+): Map<string, NeighbourStop> {
+  const allowed = modes && modes.length > 0 ? new Set(modes) : null;
+  const sites = new Map<string, NeighbourStop>();
+  for (const s of [...stops].sort((a, b) =>
+    side === "origin" ? a.secondsTo - b.secondsTo : a.secondsFrom - b.secondsFrom,
+  )) {
+    if (allowed && !allowed.has(s.mode)) continue;
+    if (!sites.has(s.siteGid)) sites.set(s.siteGid, s);
+    if (sites.size >= MAX_ENUMERATED_SITES) break;
+  }
+  return sites;
+}
+
 export async function planCommute(query: CommuteQuery, userId: string): Promise<CommuteResponse> {
   // The account is the default; the query overrides only what it actually names.
   const settings: CommuteSettings = mergeSettings(getSettings(userId), query);
@@ -437,17 +466,17 @@ export async function planCommute(query: CommuteQuery, userId: string): Promise<
   const far = side === "origin" ? to : from;
   const hood = await getNeighbourhood(near.lat, near.lon, settings);
 
-  // One request per site, nearest first, covering every mode at that site.
-  const sites = new Map<string, NeighbourStop>();
-  for (const s of [...hood.stops].sort((a, b) =>
-    side === "origin" ? a.secondsTo - b.secondsTo : a.secondsFrom - b.secondsFrom,
-  )) {
-    if (!sites.has(s.siteGid)) sites.set(s.siteGid, s);
-    if (sites.size >= MAX_ENUMERATED_SITES) break;
-  }
+  const sites = sitesToAsk(hood.stops, side, query.modes);
 
   const walkPercent = slWalkPercent(settings.speedKmh);
   const notices = new Set<string>();
+  if (sites.size === 0) {
+    notices.add(
+      hood.stops.length === 0
+        ? "Inga hållplatser inom gångavstånd."
+        : "Inga hållplatser för de valda färdmedlen inom gångavstånd.",
+    );
+  }
 
   const results = await Promise.all(
     [...sites.entries()].map(async ([gid, stop]) => {
@@ -474,9 +503,14 @@ export async function planCommute(query: CommuteQuery, userId: string): Promise<
         results: 3,
         walkPercent,
         maxWalkMinutes: settings.maxWalkMinutes,
+        modes: query.modes,
       };
       const whenKey = askAt ? `${pivot.arriveBy ? "arr" : "dep"}:${askAt.toISOString().slice(0, 16)}` : "now";
-      const key = `commute:${JSON.stringify(params.from)}>${JSON.stringify(params.to)}:${whenKey}:${walkPercent}:${settings.maxWalkMinutes}`;
+      // The mode filter is part of the key, not a detail of the request: two travellers
+      // asking about the same stop at the same minute get different answers when one of
+      // them is only willing to take the boat.
+      const modeKey = query.modes ? [...query.modes].sort().join("+") : "all";
+      const key = `commute:${JSON.stringify(params.from)}>${JSON.stringify(params.to)}:${whenKey}:${walkPercent}:${settings.maxWalkMinutes}:${modeKey}`;
       try {
         return await cached(key, TRIPS_CACHE_SECONDS, () => trips(params));
       } catch (err) {
