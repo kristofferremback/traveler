@@ -5,8 +5,10 @@ import type { Place } from "@traveler/shared";
 import { Map as MapIcon } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useOverlay } from "@/lib/overlay";
+import { parseModes } from "@/lib/modes";
 import { PlaceSearch, type PlaceChoice } from "@/components/PlaceSearch";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
+import { ModePicker, ModePill } from "@/components/ModePicker";
 import { TripControl } from "@/components/TripControl";
 import { JourneyCard } from "@/components/JourneyCard";
 import { Button } from "@/components/ui/button";
@@ -42,6 +44,9 @@ export function PlanPage() {
   const when = params.get("when");
   const arriveBy = params.get("arriveBy") === "1";
   const time: PlanTime = when ? { when, arriveBy } : null;
+  /** The same filter as the commute screen, from the same parameter, spelled the same way. */
+  const modes = useMemo(() => parseModes(params.get("modes")), [params]);
+  const modeKey = modes.join(",");
 
   const savedPlaces = useQuery({
     queryKey: ["places"],
@@ -113,7 +118,7 @@ export function PlanPage() {
   );
 
   const { open: picker, show: openPicker, close: closePicker, settle } =
-    useOverlay<"from" | "to" | "time">();
+    useOverlay<"from" | "to" | "time" | "modes">();
 
   /** An answer from an overlay: the same change as `update`, and the overlay closes. */
   const answer = useCallback(
@@ -131,7 +136,7 @@ export function PlanPage() {
   };
 
   const query = useQuery({
-    queryKey: ["journeys", fromId, toId, when, arriveBy],
+    queryKey: ["journeys", fromId, toId, when, arriveBy, modeKey],
     enabled: Boolean(fromId && toId),
     queryFn: ({ signal }) =>
       api.journeys(
@@ -141,6 +146,7 @@ export function PlanPage() {
           when: when ?? undefined,
           arriveBy,
           results: 3,
+          ...(modeKey ? { modes: modeKey } : {}),
         },
         signal,
       ),
@@ -166,19 +172,22 @@ export function PlanPage() {
           onOpen={openPicker}
           onSwap={swap}
           trailing={
-            journeys.length > 0 ? (
-              <Button
-                type="button"
-                variant={showMap ? "default" : "outline"}
-                size="sm"
-                onClick={() => setShowMap((v) => !v)}
-                aria-pressed={showMap}
-                className="rounded-full"
-              >
-                <MapIcon />
-                Karta
-              </Button>
-            ) : null
+            <>
+              <ModePill modes={modes} onOpen={() => openPicker("modes")} />
+              {journeys.length > 0 ? (
+                <Button
+                  type="button"
+                  variant={showMap ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setShowMap((v) => !v)}
+                  aria-pressed={showMap}
+                  className="rounded-full"
+                >
+                  <MapIcon />
+                  Karta
+                </Button>
+              ) : null}
+            </>
           }
         />
       </div>
@@ -222,7 +231,9 @@ export function PlanPage() {
 
       {query.isSuccess && journeys.length === 0 ? (
         <p className="rounded-[var(--radius-card)] border border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
-          Ingen resa hittades. Prova en annan tid.
+          {modes.length > 0
+            ? "Ingen resa med de valda färdmedlen. Prova fler färdmedel eller en annan tid."
+            : "Ingen resa hittades. Prova en annan tid."}
         </p>
       ) : null}
 
@@ -250,6 +261,14 @@ export function PlanPage() {
           onPick={(next) =>
             answer({ when: next?.when ?? null, arriveBy: next?.arriveBy ? "1" : null })
           }
+          onClose={closePicker}
+        />
+      ) : null}
+
+      {picker === "modes" ? (
+        <ModePicker
+          modes={modes}
+          onPick={(next) => answer({ modes: next.join(",") || null })}
           onClose={closePicker}
         />
       ) : null}
