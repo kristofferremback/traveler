@@ -109,6 +109,30 @@ export function arrivalAtLeg(legs: JourneyLeg[], index: number): number | null {
 }
 
 /**
+ * How far before a leg the board reaches when the traveller is not there yet. Wide
+ * enough to be "around the time it goes", narrow enough that the leg's own ride is
+ * still near the top.
+ */
+const BOARD_LEAD_MS = 15 * 60_000;
+
+/**
+ * When the board at a stop starts.
+ *
+ * Around the time the leg goes, because the leg is the trip being asked about, and
+ * never in the past, because departures that have gone are not choices. A trip planned
+ * for Monday anchors on Monday; standing at the stop on the day, the clock wins and the
+ * bus in front of you is on the board. At a stop further along, the traveller's own
+ * arrival is the start -- nothing before it was ever theirs to catch.
+ */
+export function boardFrom(option: CommuteOption, index: number, now: number): number {
+  const legs = option.journey.legs;
+  const arrival = arrivalAtLeg(legs, index);
+  if (arrival !== null) return Math.max(now, arrival);
+  const departs = at(legs[index]!, "origin");
+  return departs === null ? now : Math.max(now, departs - BOARD_LEAD_MS);
+}
+
+/**
  * A trip that branches off another one at a stop.
  *
  * The part already travelled is the parent's, the rest is an option planned from that

@@ -5,7 +5,7 @@ import { ChevronLeft, Footprints, GitBranch } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatDuration, formatTime } from "@/lib/format";
 import { modeColor } from "@/lib/modes";
-import { arrivalAtLeg, board, boardable, leaveLabel, liveStatus, sameRide, splice } from "@/lib/trips";
+import { arrivalAtLeg, board, boardFrom, boardable, leaveLabel, liveStatus, sameRide, splice } from "@/lib/trips";
 import { LineBadge } from "./LineBadge";
 import { TripRow } from "./CommuteRows";
 import { Badge } from "./ui/badge";
@@ -99,15 +99,9 @@ function Branches({
 }) {
   const leg = parent.journey.legs[index]!;
   const from = leg.origin.siteGid!;
-  /**
-   * The board starts when the traveller can be standing here: now at the stop they set
-   * off from, their arrival at any stop further along. Not the leg's own departure --
-   * the reason to ask is the bus that goes before it. Fixed when the branches open
-   * rather than following the clock, so the answer stays put while it is being read.
-   */
-  const [when] = useState(() =>
-    new Date(Math.max(Date.now(), arrivalAtLeg(parent.journey.legs, index) ?? 0)).toISOString(),
-  );
+  // Fixed when the branches open rather than following the clock, so the answer stays
+  // put while it is being read.
+  const [when] = useState(() => new Date(boardFrom(parent, index, Date.now())).toISOString());
   const branches = useQuery({
     queryKey: ["branches", from, to, when],
     queryFn: ({ signal }) => api.commute({ from, to, when, paths: "all" }, signal),

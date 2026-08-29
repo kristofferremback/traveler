@@ -616,6 +616,30 @@ test.describe("the commute screen", () => {
     await expect(trip.getByRole("button", { name: "Fler val härifrån" }).first()).toBeVisible();
   });
 
+  test("a trip picked for tomorrow asks about tomorrow, not this afternoon", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/commute")) asked.push(decodeURIComponent(r.url()));
+    });
+    const tomorrow = localTomorrowAt(8, 0);
+    await page.goto(trip);
+    await page.getByRole("button", { name: /^Nu$/ }).click();
+    const picker = page.getByRole("dialog", { name: "Välj tid" });
+    await picker.getByLabel("Tidigast avgång").fill(tomorrow);
+    await picker.getByRole("button", { name: "Klar" }).click();
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+
+    await rows(page).first().getByRole("button").click();
+    const view = page.getByRole("region", { name: "Vald resa" });
+    await view.getByRole("button", { name: "Fler val härifrån" }).first().click();
+    // The board is anchored on the day of the leg. Answering with today's departures is
+    // the bug this test exists for.
+    const day = tomorrow.slice(0, 10);
+    await expect
+      .poll(() => asked.find((u) => u.includes("from=9091") && u.includes("when=")), { timeout: 60_000 })
+      .toContain(`when=${day}`);
+  });
+
   test("says on the map which line to board, and when", async ({ page }) => {
     await open(page);
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });

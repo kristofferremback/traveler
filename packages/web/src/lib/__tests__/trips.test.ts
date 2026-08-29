@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CommuteOption, JourneyLeg } from "@traveler/shared";
-import { arrivalAtLeg, board, boardable, leaveLabel, liveStatus, sameRide, splice } from "../trips";
+import { arrivalAtLeg, board, boardFrom, boardable, leaveLabel, liveStatus, sameRide, splice } from "../trips";
 
 const T = (hhmm: string) => `2026-08-28T${hhmm}:00+02:00`;
 const ms = (hhmm: string) => new Date(T(hhmm)).getTime();
@@ -89,6 +89,53 @@ describe("arrivalAtLeg", () => {
     expect(arrivalAtLeg(legs, 2)).toBe(ms("08:41"));
     expect(arrivalAtLeg(legs, 1)).toBe(ms("08:38"));
     expect(arrivalAtLeg(legs, 0)).toBeNull();
+  });
+});
+
+describe("boardFrom", () => {
+  /** Monday, because the bug was a trip picked for Monday answered with Saturday. */
+  const mon = (hhmm: string) => `2026-08-31T${hhmm}:00+02:00`;
+  const monday = (hhmm: string) => new Date(mon(hhmm)).getTime();
+  const saturday = new Date("2026-08-29T16:30:00+02:00").getTime();
+
+  const stop = (name: string, time: string | null) => ({
+    name,
+    platform: null,
+    lat: null,
+    lon: null,
+    siteId: null,
+    siteGid: null,
+    scheduled: time,
+    expected: time,
+  });
+  const planned = option(
+    [
+      leg({ mode: "WALK", durationSeconds: 480, destination: stop("Nacka trafikplats", null) }),
+      leg({
+        mode: "BUS",
+        line: { id: null, designation: "435C", name: null, mode: "BUS", groupOfLines: null },
+        origin: stop("Nacka trafikplats", mon("08:11")),
+        destination: stop("Cityterminalen", mon("08:33")),
+        durationSeconds: 22 * 60,
+      }),
+    ],
+    { id: "planned", leaveAt: mon("08:03"), arriveAt: mon("08:40") },
+  );
+  // The ride is at index 1: the walk to the stop carries no times of its own.
+  const ridden = 1;
+
+  test("a trip picked for Monday anchors on Monday, not on the afternoon you asked", () => {
+    expect(boardFrom(planned, ridden, saturday)).toBe(monday("07:56"));
+  });
+
+  test("standing at the stop on the day, the clock wins", () => {
+    expect(boardFrom(planned, ridden, monday("08:09"))).toBe(monday("08:09"));
+    expect(boardFrom(planned, ridden, monday("07:40"))).toBe(monday("07:56"));
+  });
+
+  test("further along the trip it starts when the traveller gets there", () => {
+    expect(boardFrom(home, 1, ms("07:00"))).toBe(ms("08:38"));
+    expect(boardFrom(home, 1, ms("08:50"))).toBe(ms("08:50"));
   });
 });
 
