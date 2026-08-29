@@ -115,6 +115,17 @@ export function CommutePage() {
   const paths = useRef<"recommended" | "all">("recommended");
 
   /**
+   * The instant to re-ask about, when the second ask is the same question as the first.
+   *
+   * Asking for the geometry is not a new question, but "nu" is a different instant every
+   * second, and the engine turns one plan into a dozen upstream requests whose keys are
+   * the time asked about. Left to drift, the second round shares nothing with the first
+   * and the tapped row waits for a whole new set of answers from SL. Pinned to what the
+   * first answer was planned from, it is a dozen cache reads.
+   */
+  const pinnedWhen = useRef<string | null>(null);
+
+  /**
    * The position is fetched inside the query rather than held in state and put in the
    * key: the key stays the refs the traveller chose, so a new fix on the next refresh
    * replaces the rows in place instead of emptying the list to skeletons first.
@@ -136,6 +147,8 @@ export function CommutePage() {
     // A new time keeps the old answer on screen until the new one has arrived.
     placeholderData: keepPreviousData,
     queryFn: async ({ signal }) => {
+      const pinned = pinnedWhen.current;
+      pinnedWhen.current = null;
       let here: Position | null = null;
       if (needsPosition) {
         try {
@@ -155,7 +168,11 @@ export function CommutePage() {
         {
           from: asApiRef(fromRef!),
           to: asApiRef(toRef!),
-          ...(time ? { when: time.when, ...(time.arriveBy ? { arriveBy: "1" as const } : {}) } : {}),
+          ...(time
+            ? { when: time.when, ...(time.arriveBy ? { arriveBy: "1" as const } : {}) }
+            : pinned
+              ? { when: pinned }
+              : {}),
           ...(modeKey ? { modes: modeKey } : {}),
           paths: paths.current,
         },
@@ -224,6 +241,7 @@ export function CommutePage() {
       const drawable = option.journey.legs.some((leg) => leg.path.length > 1);
       if (!drawable && paths.current !== "all") {
         paths.current = "all";
+        pinnedWhen.current = commute.data?.plannedFrom ?? null;
         void commute.refetch();
       }
     },

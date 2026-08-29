@@ -573,6 +573,12 @@ test.describe("the commute screen", () => {
     await expect
       .poll(() => asked.some((url) => url.includes("paths=all")), { timeout: 30_000 })
       .toBe(true);
+    // And it asks the same question in the same words. The first ask says nothing about
+    // when, because the answer is "now"; the second pins the instant the first was
+    // planned from, so the dozen upstream requests behind it are the same dozen and the
+    // second round is cache reads rather than a fresh wait on SL.
+    expect(asked[0]).not.toContain("when=");
+    expect(asked.find((url) => url.includes("paths=all"))).toContain("when=");
     // Back is the phone's Back: the list is as it was, with the opened trip still the
     // drawn one, and nothing was asked again.
     const before = asked.length;
