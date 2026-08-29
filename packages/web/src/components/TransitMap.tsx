@@ -349,7 +349,25 @@ function destinationMarker(): HTMLElement {
   return el;
 }
 
-function boundsOf(journey: Journey): LngLatBoundsLike | null {
+/**
+ * How coarsely a box is asked for: about a kilometre at this latitude.
+ *
+ * The box is part of the vehicle stream's URL and the stream reopens whenever that URL
+ * changes, so an exact viewport dropped the feed and opened a new connection on every
+ * pan, pinch and automatic camera fit. Snapped outward to this grid, the string holds
+ * still across small movements and still covers everything on screen.
+ */
+const BOX_GRID = 0.01;
+
+function boxParam(bounds: maplibregl.LngLatBounds): string {
+  const down = (n: number) => Math.floor(n / BOX_GRID) * BOX_GRID;
+  const up = (n: number) => Math.ceil(n / BOX_GRID) * BOX_GRID;
+  return [down(bounds.getWest()), down(bounds.getSouth()), up(bounds.getEast()), up(bounds.getNorth())]
+    .map((n) => n.toFixed(2))
+    .join(",");
+}
+
+function boundsOf(journey: Journey): maplibregl.LngLatBounds | null {
   const coords = journey.legs.flatMap((leg) => leg.path);
   if (coords.length === 0) return null;
   const bounds = new maplibregl.LngLatBounds(coords[0], coords[0]);
@@ -358,7 +376,7 @@ function boundsOf(journey: Journey): LngLatBoundsLike | null {
 }
 
 /** The ride, our walks and both doors: everything the traveller is being shown. */
-function boundsOfOption(option: CommuteOption): LngLatBoundsLike | null {
+function boundsOfOption(option: CommuteOption): maplibregl.LngLatBounds | null {
   const coords: [number, number][] = [
     ...option.journey.legs.flatMap((leg) => leg.path),
     ...(option.origin.stop?.path ?? []),
@@ -487,14 +505,7 @@ export function TransitMap({
       setReady(true);
     });
 
-    const updateBounds = () => {
-      const b = instance.getBounds();
-      setBbox(
-        [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
-          .map((n) => n.toFixed(4))
-          .join(","),
-      );
-    };
+    const updateBounds = () => setBbox(boxParam(instance.getBounds()));
     instance.on("moveend", updateBounds);
     instance.on("load", updateBounds);
 
@@ -672,11 +683,35 @@ export function TransitMap({
   }, [neighbourhood, ready]);
 
   const wantsVehicles = showVehicles || vehicleTrip !== null;
+
+  /**
+   * The box the vehicle feed is asked for.
+   *
+   * Following one departure it is the trip's own, not the viewport's: the bus can be
+   * behind you and off the top of the screen, and which bus it is has nothing to do with
+   * where the camera points. Tying it to the camera also tied the connection to the
+   * camera, and since fitting the map to a tapped trip is a camera move, browsing the
+   * list dropped and reopened the feed once per row.
+   */
+  const vehicleBox = useMemo(() => {
+    if (!vehicleTrip) return bbox;
+    const bounds = option ? boundsOfOption(option) : null;
+    // Before the geometry has arrived, a box around the stop being boarded at, wide
+    // enough to hold a vehicle that has not reached it yet.
+    return boxParam(
+      bounds ??
+        new maplibregl.LngLatBounds(
+          [vehicleTrip.lon - 0.12, vehicleTrip.lat - 0.06],
+          [vehicleTrip.lon + 0.12, vehicleTrip.lat + 0.06],
+        ),
+    );
+  }, [vehicleTrip, option, bbox]);
+
   const vehicleUrl = useMemo(
     () =>
-      wantsVehicles && bbox
+      wantsVehicles && vehicleBox
         ? streams.vehicles({
-            bbox,
+            bbox: vehicleBox,
             ...(vehicleTrip
               ? {
                   line: vehicleTrip.line,
@@ -688,7 +723,7 @@ export function TransitMap({
               : {}),
           })
         : null,
-    [wantsVehicles, bbox, vehicleTrip],
+    [wantsVehicles, vehicleBox, vehicleTrip],
   );
   const vehicles = useStream<VehiclesResponse>(vehicleUrl, "vehicles");
 

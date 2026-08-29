@@ -695,6 +695,44 @@ test.describe("the commute screen", () => {
     await page.screenshot({ path: ".e2e/explore/commute-vehicles.png" });
   });
 
+  test("moving the map does not ask for a different vehicle feed", async ({ page }) => {
+    /**
+     * The regression: the viewport was part of the stream's URL, and the stream is
+     * reopened whenever that URL changes. Every pan, pinch and automatic camera fit
+     * therefore dropped the feed and opened a new connection, and since tapping a row
+     * fits the camera, browsing the list did it once per row.
+     *
+     * Distinct URLs rather than connections, because a mocked stream closes as soon as
+     * it is fulfilled and EventSource reconnects to the same URL on its own.
+     */
+    const urls = new Set<string>();
+    await page.route("**/api/vehicles/stream*", (route) => {
+      urls.add(decodeURIComponent(route.request().url()));
+      route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: 'event: vehicles\ndata: {"vehicles":[],"fetchedAt":"2026-01-01T00:00:00Z","available":true,"reason":null,"match":"line"}\n\n',
+      });
+    });
+
+    await open(page);
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+    await expect.poll(() => urls.size).toBeGreaterThan(0);
+    const asked = urls.size;
+
+    // Three drags across open map, above the sheet.
+    for (const dy of [40, -60, 30]) {
+      await page.mouse.move(200, 300);
+      await page.mouse.down();
+      await page.mouse.move(200 + dy, 300 + dy, { steps: 8 });
+      await page.mouse.up();
+      await page.waitForTimeout(400);
+    }
+
+    // Which bus is yours has nothing to do with where the camera points.
+    expect(urls.size).toBe(asked);
+  });
+
   test("keeps from and to in the URL and swaps them", async ({ page }) => {
     await page.goto(trip);
     const from = page.getByRole("button", { name: /^Från/ });
