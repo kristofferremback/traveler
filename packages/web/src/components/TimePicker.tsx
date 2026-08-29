@@ -22,7 +22,7 @@ export function TimePill({ time, onOpen }: { time: PlanTime; onOpen: () => void 
       onClick={onOpen}
       aria-haspopup="dialog"
       className={cn(
-        "pointer-events-auto inline-flex min-h-10 max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface)]/90 px-3.5 text-sm font-medium shadow-[var(--shadow-float)] backdrop-blur-xl",
+        "pointer-events-auto inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface)]/90 px-3.5 text-sm font-medium shadow-[var(--shadow-float)] backdrop-blur-xl",
         time && "text-[var(--color-accent)]",
       )}
     >
