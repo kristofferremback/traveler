@@ -14,6 +14,9 @@ type Position = { lat: number; lon: number };
 /** How far this page looks. Named so the empty state cannot drift away from it. */
 const RADIUS_M = 1200;
 
+/** Four decimals is about ten metres, which is finer than any phone's fix. */
+const round = (n: number) => n.toFixed(4);
+
 export function NearbyPage() {
   const [position, setPosition] = useState<Position | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
@@ -48,7 +51,10 @@ export function NearbyPage() {
   useEffect(locate, []);
 
   const stops = useQuery({
-    queryKey: ["nearby", position?.lat, position?.lon],
+    // Keyed on a rounded fix, about ten metres: a phone that has not moved still reports
+    // a slightly different coordinate every time it is asked, and every one of those was
+    // a new key and another request for the same stops.
+    queryKey: ["nearby", position && round(position.lat), position && round(position.lon)],
     enabled: position !== null,
     queryFn: ({ signal }) =>
       api.nearby({ lat: position!.lat, lon: position!.lon, radius: RADIUS_M, limit: 25 }, signal),

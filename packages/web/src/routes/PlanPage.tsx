@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { Place } from "@traveler/shared";
@@ -34,8 +34,6 @@ const TransitMap = lazy(() =>
  */
 export function PlanPage() {
   const [params, setParams] = useSearchParams();
-  const [from, setFrom] = useState<Place | null>(null);
-  const [to, setTo] = useState<Place | null>(null);
   const [showMap, setShowMap] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -58,45 +56,8 @@ export function PlanPage() {
     [savedPlaces.data],
   );
 
-  /**
-   * Keep the fields and the URL in step, in both directions.
-   *
-   * The URL is the source of truth, so a parameter disappearing has to clear the field
-   * as well as a parameter appearing has to fill it. Handling only the second left
-   * Back showing a stop that the current URL no longer mentions, and then searching
-   * with it.
-   */
-  useEffect(() => {
-    if (!fromId) {
-      setFrom(null);
-      return;
-    }
-    if (from?.id === fromId) return;
-    let cancelled = false;
-    void api
-      .resolvePlace(fromId)
-      .then(({ place }) => !cancelled && setFrom(place))
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [fromId, from?.id]);
-
-  useEffect(() => {
-    if (!toId) {
-      setTo(null);
-      return;
-    }
-    if (to?.id === toId) return;
-    let cancelled = false;
-    void api
-      .resolvePlace(toId)
-      .then(({ place }) => !cancelled && setTo(place))
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [toId, to?.id]);
+  const from = usePlace(fromId);
+  const to = usePlace(toId);
 
   const merge = useCallback(
     (changes: Record<string, string | null>) => {
@@ -126,14 +87,9 @@ export function PlanPage() {
     [merge, settle],
   );
 
-  // The two places are swapped here as well as in the URL: the effects above would
-  // otherwise re-resolve both ids over the network to learn what this already knows.
-  const swap = () => {
-    const previous = from;
-    setFrom(to);
-    setTo(previous);
-    update({ from: toId, to: fromId });
-  };
+  // Only the URL: both places are already answers in the shared cache, so a swap costs
+  // two reads from it rather than two round trips.
+  const swap = () => update({ from: toId, to: fromId });
 
   const query = useQuery({
     queryKey: ["journeys", fromId, toId, when, arriveBy, modeKey],
@@ -294,6 +250,25 @@ export function PlanPage() {
  * A saved place stands for the place under it here rather than for the label: this
  * screen has no "Hem", only the stop Hem points at, and the planner speaks in ids.
  */
+/**
+ * A place id as the place itself.
+ *
+ * These were two effects calling the API directly and holding the answers in state, so
+ * stepping Back through a few searches re-resolved both ends at every step and none of
+ * it was shared with the screens that name the same places. The URL stays the one source
+ * of truth, and the cache is the app's: a place id is not going to become another place,
+ * so an answer is good for a day.
+ */
+function usePlace(id: string | null): Place | null {
+  const resolved = useQuery({
+    queryKey: ["resolve", id],
+    enabled: Boolean(id),
+    queryFn: ({ signal }) => api.resolvePlace(id!, signal),
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+  return id ? (resolved.data?.place ?? null) : null;
+}
+
 function placeId(choice: PlaceChoice): string | null {
   if (choice.kind === "saved") return choice.place.ref;
   if (choice.kind === "place") return choice.place.id;
