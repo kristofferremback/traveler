@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { CommuteOption, JourneyLeg } from "@traveler/shared";
-import { formatTime } from "@/lib/format";
+import { dayLabel, formatTime } from "@/lib/format";
 import { leaveLabel, liveStatus } from "@/lib/trips";
 import { LineBadge } from "./LineBadge";
 import { cn } from "@/lib/utils";
@@ -115,11 +115,25 @@ export function CommuteRows({
 }) {
   return (
     <ul aria-label="Resor" className="-mx-3 divide-y divide-[var(--color-border)]">
-      {options.map((option) => (
-        <li key={option.id}>
-          <TripRow option={option} now={now} selected={option.id === selectedId} onOpen={onOpen} className="rounded-none" />
-        </li>
-      ))}
+      {options.map((option, i) => {
+        // The list can cross midnight -- a late search, or Tidigare stepping back over
+        // it -- and "00:15" then reads as this morning. The day is said once, on the
+        // first row it applies to, and today is left unsaid because it is the default.
+        const day = dayLabel(option.leaveAt);
+        const above = i > 0 ? dayLabel(options[i - 1]!.leaveAt) : null;
+        return (
+          <li key={option.id}>
+            <TripRow
+              option={option}
+              now={now}
+              selected={option.id === selectedId}
+              onOpen={onOpen}
+              note={day && day !== above ? day : null}
+              className="rounded-none"
+            />
+          </li>
+        );
+      })}
     </ul>
   );
 }

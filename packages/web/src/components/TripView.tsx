@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { CommuteOption, JourneyLeg } from "@traveler/shared";
 import { ChevronLeft, Footprints, GitBranch } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { formatDuration, formatTime } from "@/lib/format";
+import { dayLabel, formatDuration, formatTime } from "@/lib/format";
 import { modeColor } from "@/lib/modes";
 import { arrivalAtLeg, board, boardFrom, boardable, leaveLabel, liveStatus, sameRide, splice } from "@/lib/trips";
 import { LineBadge } from "./LineBadge";
@@ -200,6 +200,7 @@ export function TripView({
   const rides = legs.filter((leg) => leg.mode !== "WALK");
   const leave = leaveLabel(option, now);
   const status = liveStatus(option, now);
+  const day = dayLabel(option.leaveAt);
 
   return (
     <section aria-label="Vald resa">
@@ -213,6 +214,8 @@ export function TripView({
               {leave.big}
             </span>
             <span className="text-[15px] text-[var(--color-muted)]">
+              {/* A trip on another day says so: "Gå 08:10" alone is this morning. */}
+              {day ? `${day} · ` : ""}
               {leave.small ? `${leave.small} · ` : ""}framme {formatTime(option.arriveAt)}
             </span>
           </p>
