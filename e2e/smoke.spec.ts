@@ -235,6 +235,37 @@ test.describe("departures", () => {
     await expect(board).toContainText(/\d{2}:\d{2}|Nu/);
   });
 
+  test("a hidden tab holds no stream, and coming back reconnects", async ({ page }) => {
+    // A board left open in a pocket has nobody reading it and its stream is a poll
+    // upstream for as long as the tab exists.
+    const opened: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/departures/stream")) opened.push(r.url());
+    });
+
+    await page.goto("/stop/9189");
+    const board = page.getByRole("region", { name: /avgångar/i });
+    await expect(board.locator("li").first()).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => opened.length).toBe(1);
+    const shown = await board.locator("li").first().innerText();
+
+    const visibility = (hidden: boolean) =>
+      page.evaluate((h) => {
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => h });
+        document.dispatchEvent(new Event("visibilitychange"));
+      }, hidden);
+
+    await visibility(true);
+    await page.waitForTimeout(1500);
+    expect(opened.length).toBe(1);
+    // The board that was there is still there, with its own timestamp under it. Blanking
+    // it would mean coming back to an empty screen and waiting for the first payload.
+    await expect(board.locator("li").first()).toHaveText(shown);
+
+    await visibility(false);
+    await expect.poll(() => opened.length, { timeout: 15_000 }).toBe(2);
+  });
+
   test("a mode filter can always be undone", async ({ page }) => {
     // Regression: filtering narrowed the stream itself, which removed the tabs and
     // left no way back to "Alla".
