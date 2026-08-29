@@ -47,11 +47,22 @@ export function BottomSheet({
   children,
   label,
   onHeightChange,
+  onSettle,
 }: {
   children: ReactNode;
   /** Names the region for a screen reader; the visible header is inside `children`. */
   label: string;
+  /**
+   * Every height the sheet passes through, including each pixel of a drag. For anything
+   * that has to track the sheet continuously, and cheap enough to do so.
+   */
   onHeightChange?: (height: number) => void;
+  /**
+   * Where the sheet came to rest: a snap, a resize, the end of a drag. What a caller
+   * holding the height in state should listen to, so a drag is not a hundred renders of
+   * whatever is on the screen behind it.
+   */
+  onSettle?: (height: number) => void;
 }) {
   const [snap, setSnap] = useState<Snap>("peek");
   const [height, setHeight] = useState(PEEK_HEIGHT);
@@ -68,14 +79,23 @@ export function BottomSheet({
     [onHeightChange],
   );
 
+  /** A height that is not on its way anywhere: reported to both callbacks. */
+  const rest = useCallback(
+    (next: number) => {
+      report(next);
+      onSettle?.(next);
+    },
+    [report, onSettle],
+  );
+
   // The viewport changes when the on-screen keyboard opens or the phone turns, and a
   // sheet still sized for the old one either floats or covers the map.
   useEffect(() => {
-    const resize = () => report(snapHeights(window.innerHeight)[snap]);
+    const resize = () => rest(snapHeights(window.innerHeight)[snap]);
     resize();
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
-  }, [snap, report]);
+  }, [snap, rest]);
 
   const settle = (target: number) => {
     const heights = snapHeights(window.innerHeight);
@@ -83,7 +103,7 @@ export function BottomSheet({
       Math.abs(heights[key] - target) < Math.abs(heights[best] - target) ? key : best,
     );
     setSnap(nearest);
-    report(heights[nearest]);
+    rest(heights[nearest]);
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -124,7 +144,7 @@ export function BottomSheet({
     const order: Snap[] = ["peek", "half", "full"];
     const next = snap === "tucked" ? "peek" : order[(order.indexOf(snap) + 1) % order.length]!;
     setSnap(next);
-    report(snapHeights(window.innerHeight)[next]);
+    rest(snapHeights(window.innerHeight)[next]);
   };
 
   // Escape gets out of a covered map without hunting for the handle.
@@ -133,11 +153,11 @@ export function BottomSheet({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       setSnap("peek");
-      report(snapHeights(window.innerHeight).peek);
+      rest(snapHeights(window.innerHeight).peek);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [snap, report]);
+  }, [snap, rest]);
 
   const reduceMotion =
     typeof window !== "undefined" &&

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { CommuteOption, SavedPlace } from "@traveler/shared";
@@ -245,7 +245,20 @@ export function CommutePage() {
     return () => clearInterval(timer);
   }, []);
 
+  /**
+   * Where the sheet is, in two forms, because the two readers want different things.
+   *
+   * The map's camera reads a settled height when it fits a trip, and that is state. The
+   * basemap licence has to sit on top of the sheet through the whole drag, and that is a
+   * CSS variable set on the root by hand. Running the live height through page state
+   * instead re-rendered the map, the control and every row once per pointer move, which
+   * is what made dragging the sheet stutter.
+   */
+  const root = useRef<HTMLDivElement>(null);
   const [sheetHeight, setSheetHeight] = useState(PEEK_HEIGHT);
+  const trackSheet = useCallback((height: number) => {
+    root.current?.style.setProperty("--map-inset", `${height}px`);
+  }, []);
 
   /**
    * The picker is a history entry, so Back closes it.
@@ -330,7 +343,7 @@ export function CommutePage() {
     : null;
 
   return (
-    <div className="fixed inset-0">
+    <div ref={root} className="fixed inset-0" style={{ "--map-inset": `${PEEK_HEIGHT}px` } as CSSProperties}>
       <Suspense fallback={<div className="size-full bg-[var(--color-surface-2)]" />}>
         <TransitMap
           option={selected}
@@ -353,7 +366,7 @@ export function CommutePage() {
         />
       </div>
 
-      <BottomSheet label="Resor härifrån" onHeightChange={setSheetHeight}>
+      <BottomSheet label="Resor härifrån" onHeightChange={trackSheet} onSettle={setSheetHeight}>
         <div className="space-y-2 px-3 pb-4">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-[var(--color-muted)]">

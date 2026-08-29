@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { type LngLatBoundsLike, type Map as MapLibreMap } from "maplibre-gl";
 import type { Feature, FeatureCollection } from "geojson";
 import { Protocol } from "pmtiles";
@@ -426,7 +426,11 @@ export function TransitMap({
    * not need a notice for that.
    */
   vehicleTrip?: VehicleTrip | null;
-  /** Pixels at the bottom covered by something else, such as the commute sheet. */
+  /**
+   * Pixels at the bottom covered by something else, such as the commute sheet, used as
+   * camera padding so a fitted trip lands above it. The settled height, not the live
+   * one: a drag is a hundred numbers and the camera only reads this when it fits.
+   */
   bottomInset?: number;
   className?: string;
 }) {
@@ -448,13 +452,13 @@ export function TransitMap({
   /**
    * Read at fit time, not depended on.
    *
-   * The sheet reports a new inset on every pixel of a drag, and a camera that refits on
-   * each of them fights the hand doing the dragging. The next fit -- another option, a
-   * refresh -- uses wherever the sheet ended up.
+   * A camera that refits on every pixel of a drag fights the hand doing the dragging.
+   * The next fit -- another option, a refresh -- uses wherever the sheet ended up.
    *
    * Capped here rather than by the caller: a fit whose padding is taller than the
-   * container has nowhere to put the route. The uncapped figure is still what the
-   * attribution is placed against, because that has to clear the sheet at every height.
+   * container has nowhere to put the route. The attribution is placed against the
+   * uncapped, live figure instead, which the page publishes as `--map-inset`, because
+   * that has to clear the sheet at every height and during the drag itself.
    */
   const insetRef = useRef(0);
   insetRef.current = Math.min(bottomInset, Math.round(window.innerHeight * 0.4));
@@ -772,7 +776,7 @@ export function TransitMap({
   return (
     // The sheet's height, published to CSS: MapLibre's own controls are positioned
     // against it so they sit just clear of whatever is covering the bottom of the map.
-    <div className={className} style={{ "--map-inset": `${bottomInset}px` } as CSSProperties}>
+    <div className={className}>
       <div
         ref={container}
         className="size-full"
