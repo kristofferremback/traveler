@@ -32,6 +32,38 @@ export function leaveLabel(option: CommuteOption, now: number): { big: string; s
   return { big: `Gå ${formatTime(option.leaveAt)}`, small: null };
 }
 
+/** The running list of trips on screen, and the question it is an answer to. */
+export type Answered = { key: string; options: CommuteOption[] };
+
+/**
+ * The list after a new answer arrives.
+ *
+ * "Tidigare" is the one change that adds to the list instead of replacing it: its
+ * answer is planned ten minutes earlier, holds what has been missed since, and drops
+ * the far end of the horizon, so the two are merged with the newest leading in its own
+ * order and missed trips last. `extend` says so explicitly rather than being inferred
+ * from the key, because every other change -- other places, a deadline instead of a
+ * departure, and above all a different time -- is a different question, and the old
+ * answer to it is a list of departures nobody can still take.
+ */
+export function accumulate(
+  previous: Answered,
+  key: string,
+  fresh: CommuteOption[],
+  extend: boolean,
+): Answered {
+  const kept = previous.key === key || extend ? previous.options : [];
+  const ids = new Set(fresh.map((o) => o.id));
+  const merged = [...fresh, ...kept.filter((o) => !ids.has(o.id))];
+  return {
+    key,
+    options: [
+      ...merged.filter((o) => o.status !== "missed"),
+      ...merged.filter((o) => o.status === "missed"),
+    ],
+  };
+}
+
 /** The line a traveller would name when asked what they are about to get on. */
 function boardingLine(option: CommuteOption): string {
   const first = option.journey.legs.find((leg) => leg.mode !== "WALK");

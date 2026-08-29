@@ -6,8 +6,11 @@ import { cn } from "@/lib/utils";
  * what, and when you land, without touching anything.
  */
 export const PEEK_HEIGHT = 236;
-/** Only the handle: the map is as full-screen as it gets while the app keeps its bar. */
-const TUCKED_HEIGHT = 30;
+/**
+ * Only the handle: the map is as full-screen as it gets while the app keeps its bar.
+ * A thumb's worth, because tucked the handle is the only way back to the list.
+ */
+const TUCKED_HEIGHT = 44;
 /** Chips and the map's controls stay reachable at full height: this much map stays uncovered. */
 const TOP_GAP = 132;
 /**
@@ -159,7 +162,7 @@ export function BottomSheet({
         aria-label={
           snap === "tucked" ? "Visa resor" : snap === "full" ? "Fäll ihop listan" : "Visa fler resor"
         }
-        className="flex h-[30px] w-full shrink-0 touch-none items-center justify-center"
+        className="flex h-11 w-full shrink-0 touch-none items-center justify-center"
       >
         <span
           className="block h-1.5 w-10 rounded-full bg-[var(--color-muted)]/45"

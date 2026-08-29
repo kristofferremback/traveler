@@ -11,6 +11,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 type Position = { lat: number; lon: number };
 
+/** How far this page looks. Named so the empty state cannot drift away from it. */
+const RADIUS_M = 1200;
+
 export function NearbyPage() {
   const [position, setPosition] = useState<Position | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
@@ -48,7 +51,7 @@ export function NearbyPage() {
     queryKey: ["nearby", position?.lat, position?.lon],
     enabled: position !== null,
     queryFn: ({ signal }) =>
-      api.nearby({ lat: position!.lat, lon: position!.lon, radius: 1200, limit: 25 }, signal),
+      api.nearby({ lat: position!.lat, lon: position!.lon, radius: RADIUS_M, limit: 25 }, signal),
     staleTime: 60_000,
   });
 
@@ -80,7 +83,7 @@ export function NearbyPage() {
 
       {stops.data && stops.data.places.length === 0 ? (
         <p className="rounded-[var(--radius-card)] border border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
-          Inga hållplatser inom en kilometer.
+          Inga hållplatser inom {formatDistance(RADIUS_M)}.
         </p>
       ) : null}
 
