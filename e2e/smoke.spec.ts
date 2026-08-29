@@ -853,6 +853,9 @@ test.describe("the commute screen", () => {
     await expect(page.getByRole("button", { name: /^Avgång/ })).toBeVisible();
     // Still answering: the rows planned from ten minutes ago include what is live now.
     await expect(rows(page).first()).toBeVisible({ timeout: 60_000 });
+    // And still one answer: each response marks its own best row, so a merged list
+    // could carry two recommendations if the older one were not superseded by id.
+    await expect(rows(page).getByText("Rekommenderad")).toHaveCount(1);
 
     await page.goBack();
     await expect(page).toHaveURL(/^(?!.*when=).*$/);
