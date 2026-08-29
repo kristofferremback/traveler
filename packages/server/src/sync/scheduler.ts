@@ -64,6 +64,14 @@ function bootSyncReason(): string | null {
   if (!last || last.status !== "ok" || !last.finished_at) {
     return "no successful catalog sync on record";
   }
+  // Readiness demands a finished derived pass, and the passes fail independently: a
+  // sites sync can land while the derived one behind it does not. Without this, a
+  // single failed derived pass leaves a healthy catalog answering 503 until the next
+  // scheduled tick, and every restart in between skips the sync as "fresh".
+  const derived = lastSync("derived");
+  if (!derived || derived.status !== "ok" || !derived.finished_at) {
+    return "no successful derived pass on record";
+  }
 
   const ageMs = Date.now() - new Date(last.finished_at).getTime();
   if (ageMs > env.CATALOG_SYNC_INTERVAL_MS) {
