@@ -30,13 +30,29 @@ const SERVER_ERROR_EVENT = "stream-error";
  *
  * State resets when `url` changes. Carrying it over would leave one stop's departures
  * on screen under another stop's heading until the new stream first emits.
+ *
+ * A hidden tab holds no connection. A board left open in a pocket has nobody reading it,
+ * and its stream is a poll upstream for as long as the tab exists -- and after a deploy
+ * it is a reconnect every few seconds, for good. The last payload stays on screen with
+ * its timestamp, so coming back shows the board that was there and then refreshes it.
  */
 export function useStream<T>(url: string | null, event: string): StreamState<T> {
   const [state, setState] = useState<StreamState<T>>(EMPTY);
+  const [visible, setVisible] = useState(() => !document.hidden);
 
   useEffect(() => {
-    setState(EMPTY);
-    if (!url) return;
+    const onVisibility = () => setVisible(!document.hidden);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  // A new stream is a new subject, so nothing from the old one is kept. Separate from
+  // the connection below, which also runs when the tab comes back and must not blank
+  // the screen when it does.
+  useEffect(() => setState(EMPTY), [url]);
+
+  useEffect(() => {
+    if (!url || !visible) return;
 
     const source = new EventSource(url);
 
@@ -77,7 +93,7 @@ export function useStream<T>(url: string | null, event: string): StreamState<T> 
       source.removeEventListener("error", onTransportError);
       source.close();
     };
-  }, [url, event]);
+  }, [url, event, visible]);
 
   return state;
 }

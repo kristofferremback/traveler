@@ -1,21 +1,43 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, Suspense, lazy, type ErrorInfo, type ReactNode } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AlertTriangle, MapPin, RefreshCw, Search, Settings, TriangleAlert } from "lucide-react";
 import { CommutePage } from "./routes/CommutePage";
-import { PlanPage } from "./routes/PlanPage";
-import { StopPage } from "./routes/StopPage";
-import { NearbyPage } from "./routes/NearbyPage";
-import { DisruptionsPage } from "./routes/DisruptionsPage";
 import { SignInPage } from "./routes/SignInPage";
-import { InvitePage } from "./routes/InvitePage";
-import { SettingsPage } from "./routes/SettingsPage";
-import { PlacesPage } from "./routes/PlacesPage";
-import { NewPlacePage } from "./routes/NewPlacePage";
-import { PlacePage } from "./routes/PlacePage";
 import { Button } from "./components/ui/button";
 import { useNewVersion } from "./hooks/useNewVersion";
 import { useSession } from "./lib/auth";
 import { cn } from "./lib/utils";
+
+/**
+ * The two screens someone can arrive on are in the app's own chunk; every other screen
+ * is fetched when it is opened.
+ *
+ * They all shipped together before, so signing in cost a parse of eleven screens and of
+ * the QR code library that only the settings page uses. A tab is one short fetch from
+ * the same origin, and the browser keeps it for the rest of the session.
+ */
+const PlanPage = lazy(() => import("./routes/PlanPage").then((m) => ({ default: m.PlanPage })));
+const StopPage = lazy(() => import("./routes/StopPage").then((m) => ({ default: m.StopPage })));
+const NearbyPage = lazy(() =>
+  import("./routes/NearbyPage").then((m) => ({ default: m.NearbyPage })),
+);
+const DisruptionsPage = lazy(() =>
+  import("./routes/DisruptionsPage").then((m) => ({ default: m.DisruptionsPage })),
+);
+const InvitePage = lazy(() => import("./routes/InvitePage").then((m) => ({ default: m.InvitePage })));
+const SettingsPage = lazy(() =>
+  import("./routes/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
+const PlacesPage = lazy(() => import("./routes/PlacesPage").then((m) => ({ default: m.PlacesPage })));
+const NewPlacePage = lazy(() =>
+  import("./routes/NewPlacePage").then((m) => ({ default: m.NewPlacePage })),
+);
+const PlacePage = lazy(() => import("./routes/PlacePage").then((m) => ({ default: m.PlacePage })));
+
+/** Nothing to read yet: the same pause as before the session is known. */
+const loading = (
+  <div className="flex min-h-dvh items-center justify-center" role="status" aria-label="Laddar" />
+);
 
 const TABS = [
   { to: "/", label: "Res", icon: Search, end: true },
@@ -127,15 +149,7 @@ export function App() {
    * someone who is signed in. Both look like a bug, so neither is shown until the
    * question is settled.
    */
-  if (isPending) {
-    return (
-      <div
-        className="flex min-h-dvh items-center justify-center"
-        role="status"
-        aria-label="Laddar"
-      />
-    );
-  }
+  if (isPending) return loading;
 
   if (!session && !isPublic) {
     return <Navigate to="/signin" replace />;
@@ -147,27 +161,29 @@ export function App() {
   return (
     <ErrorBoundary>
       <main className="min-h-dvh">
-        <Routes>
-          <Route path="/" element={<CommutePage />} />
-          <Route path="/plan" element={<PlanPage />} />
-          <Route path="/stop/:siteId" element={<StopPage />} />
-          <Route path="/nearby" element={<NearbyPage />} />
-          <Route path="/disruptions" element={<DisruptionsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/places" element={<PlacesPage />} />
-          <Route path="/places/new" element={<NewPlacePage />} />
-          <Route path="/places/:id" element={<PlacePage />} />
-          <Route path="/signin" element={<SignInPage />} />
-          <Route path="/invite" element={<InvitePage />} />
-          <Route
-            path="*"
-            element={
-              <div className="mx-auto max-w-2xl px-4 py-16 text-center">
-                <p className="text-sm text-[var(--color-muted)]">Sidan finns inte.</p>
-              </div>
-            }
-          />
-        </Routes>
+        <Suspense fallback={loading}>
+          <Routes>
+            <Route path="/" element={<CommutePage />} />
+            <Route path="/plan" element={<PlanPage />} />
+            <Route path="/stop/:siteId" element={<StopPage />} />
+            <Route path="/nearby" element={<NearbyPage />} />
+            <Route path="/disruptions" element={<DisruptionsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/places" element={<PlacesPage />} />
+            <Route path="/places/new" element={<NewPlacePage />} />
+            <Route path="/places/:id" element={<PlacePage />} />
+            <Route path="/signin" element={<SignInPage />} />
+            <Route path="/invite" element={<InvitePage />} />
+            <Route
+              path="*"
+              element={
+                <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+                  <p className="text-sm text-[var(--color-muted)]">Sidan finns inte.</p>
+                </div>
+              }
+            />
+          </Routes>
+        </Suspense>
       </main>
       {/* The sign-in and welcome pages are their own full screen; a tab bar there would
           offer four places to go before there is anywhere to go. */}

@@ -40,6 +40,17 @@ const log = logger("commute");
 const MAX_ENUMERATED_SITES = 12;
 /** How long a set of SL answers is reused. Two phones asking the same thing share it. */
 const TRIPS_CACHE_SECONDS = 45;
+/**
+ * What one site's question is allowed to cost.
+ *
+ * The plan waits for the slowest of a dozen parallel requests, so the default budget of
+ * fifteen seconds and two retries meant one bad stop could hold the whole screen for
+ * three quarters of a minute while eleven answers sat finished. A stop that has not
+ * answered in seven seconds is dropped with a notice naming it, which is a better
+ * screen than a spinner.
+ */
+const TRIPS_TIMEOUT_MS = 7_000;
+const TRIPS_RETRIES = 1;
 /** A boarding/alighting stop further than this from any neighbourhood stop point is not ours. */
 const MATCH_TOLERANCE_M = 250;
 /** How far from the planned time an option may leave and still be an answer, in either direction. */
@@ -504,6 +515,8 @@ export async function planCommute(query: CommuteQuery, userId: string): Promise<
         walkPercent,
         maxWalkMinutes: settings.maxWalkMinutes,
         modes: query.modes,
+        timeoutMs: TRIPS_TIMEOUT_MS,
+        retries: TRIPS_RETRIES,
       };
       const whenKey = askAt ? `${pivot.arriveBy ? "arr" : "dep"}:${askAt.toISOString().slice(0, 16)}` : "now";
       // The mode filter is part of the key, not a detail of the request: two travellers
