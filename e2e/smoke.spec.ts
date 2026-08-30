@@ -816,7 +816,7 @@ test.describe("the commute screen", () => {
 
   test("plans around a chosen time, keeps it in the URL, and Nu clears it", async ({ page }) => {
     await page.goto(trip);
-    const pill = page.getByRole("button", { name: /^Nu$|^Avgång|^Framme senast/ });
+    const pill = page.getByRole("button", { name: /^Nu$|^Avgång |^Framme / });
     await expect(pill).toHaveText("Nu");
 
     await pill.click();
@@ -828,7 +828,7 @@ test.describe("the commute screen", () => {
 
     await expect(page).toHaveURL(/arriveBy=1/);
     await expect(page).toHaveURL(/when=/);
-    await expect(pill).toHaveText("Framme senast imorgon 17:00");
+    await expect(pill).toHaveText("Framme imorgon 17:00");
 
     // Every row answers the question asked: on the ground before five.
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
@@ -852,7 +852,7 @@ test.describe("the commute screen", () => {
     // left the previous answer's departures sitting underneath the new one's, marked
     // with their own "Rekommenderad".
     await page.goto(trip);
-    const pill = page.getByRole("button", { name: /^Nu$|^Avgång|^Framme senast/ });
+    const pill = page.getByRole("button", { name: /^Nu$|^Avgång |^Framme / });
     const picker = page.getByRole("dialog", { name: "Välj tid" });
 
     /** Set the deadline, waiting the dialog open and shut around it. */
@@ -869,7 +869,7 @@ test.describe("the commute screen", () => {
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
 
     await deadline(17, false);
-    await expect(pill).toHaveText("Framme senast imorgon 17:00");
+    await expect(pill).toHaveText("Framme imorgon 17:00");
 
     // Every row has to answer the deadline just set. The engine reaches three hours
     // back from it, so nothing legitimate lands before two; a row landing before ten
@@ -939,6 +939,73 @@ test.describe("the commute screen", () => {
       timeout: 120_000,
     });
     await expect(rows(page)).toHaveCount(0);
+  });
+
+  /** The time pill, whatever it currently says. */
+  const timePill = (page: Page) => page.getByRole("button", { name: /^Nu$|^Avgång |^Framme / });
+
+  test("the controls over the map stay on screen and off the map's own buttons", async ({
+    page,
+  }) => {
+    // Regression: the filter pill sat beside a time pill reading "Framme senast imorgon
+    // 09:00", ran off the right edge of the phone, and landed on top of MapLibre's zoom
+    // button, which was pinned 3.75rem from the top whatever was above it.
+    await open(page);
+    const zoom = page.locator(".commute-map .maplibregl-ctrl-top-right .maplibregl-ctrl-group");
+    await expect(zoom.first()).toBeVisible();
+    const width = page.viewportSize()!.width;
+
+    const clear = async () => {
+      const buttons = (await zoom.first().boundingBox())!;
+      for (const pill of [timePill(page), modePill(page)]) {
+        const box = (await pill.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(width);
+        expect(box.y + box.height).toBeLessThanOrEqual(buttons.y + 1);
+      }
+    };
+
+    await clear();
+
+    // The widest the pair gets: a deadline spelled out with its day, beside two modes
+    // named in full. It wraps to a second row, and the map's buttons move down with it.
+    const picker = page.getByRole("dialog", { name: "Välj tid" });
+    await timePill(page).click();
+    await picker.getByRole("button", { name: "Framme senast" }).click();
+    await picker.getByLabel("Senast framme").fill(localTomorrowAt(9, 0));
+    await picker.getByRole("button", { name: "Klar" }).click();
+    await expect(picker).toBeHidden();
+    await expect(timePill(page)).toHaveText("Framme imorgon 09:00");
+
+    await pickMode(page, "Buss");
+    await pickMode(page, "Båt");
+    await expect(modePill(page)).toHaveText("Bara buss och båt");
+    await clear();
+  });
+
+  test("the tab bar and the sheet sit above the browser's own bar", async ({ page }) => {
+    await open(page);
+    const tabs = page.getByRole("navigation", { name: "Huvudmeny" });
+    const before = { tabs: (await tabs.boundingBox())!, sheet: (await sheet(page).boundingBox())! };
+
+    // Nothing is behind anything on a desktop, and the app has to say so rather than
+    // guess: a browser that leaves fixed boxes where they are reports zero here.
+    const measured = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--browser-chrome").trim(),
+    );
+    expect(measured).toBe("0px");
+
+    // What Firefox on Android does when its URL bar slides back in: the bottom of every
+    // fixed box is behind it. Both pieces of bottom chrome have to move with it.
+    await page.evaluate(() =>
+      document.documentElement.style.setProperty("--browser-chrome", "56px"),
+    );
+    await expect
+      .poll(async () => Math.round(before.tabs.y - (await tabs.boundingBox())!.y))
+      .toBe(56);
+    await expect
+      .poll(async () => Math.round(before.sheet.y - (await sheet(page).boundingBox())!.y))
+      .toBe(56);
   });
 
   test("the sheet tucks to its handle and a tap brings it back", async ({ page }) => {

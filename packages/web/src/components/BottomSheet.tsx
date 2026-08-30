@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { onViewportChange, visibleHeight } from "@/lib/viewport";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,8 +12,6 @@ export const PEEK_HEIGHT = 236;
  * A thumb's worth, because tucked the handle is the only way back to the list.
  */
 const TUCKED_HEIGHT = 44;
-/** Chips and the map's controls stay reachable at full height: this much map stays uncovered. */
-const TOP_GAP = 132;
 /**
  * The tab bar under the sheet: 3.5rem of links plus its safe-area padding, which is at
  * least 0.75rem. The sheet's heights are measured from the top of the bar, so the bar
@@ -22,13 +21,13 @@ const TAB_BAR = 56 + 12;
 
 export type Snap = "tucked" | "peek" | "half" | "full";
 
-function snapHeights(viewport: number): Record<Snap, number> {
+function snapHeights(viewport: number, topGap: number): Record<Snap, number> {
   const usable = viewport - TAB_BAR;
   return {
     tucked: TUCKED_HEIGHT,
     peek: PEEK_HEIGHT,
     half: Math.round(usable * 0.5),
-    full: Math.max(Math.round(usable * 0.5), usable - TOP_GAP),
+    full: Math.max(Math.round(usable * 0.5), usable - topGap),
   };
 }
 
@@ -46,12 +45,19 @@ function snapHeights(viewport: number): Record<Snap, number> {
 export function BottomSheet({
   children,
   label,
+  topGap,
   onHeightChange,
   onSettle,
 }: {
   children: ReactNode;
   /** Names the region for a screen reader; the visible header is inside `children`. */
   label: string;
+  /**
+   * Map left uncovered at full height, so whatever floats up there stays reachable. The
+   * caller measures it rather than naming a number, because what floats over the map is
+   * a stack of controls whose height depends on how long the labels in it are.
+   */
+  topGap: number;
   /**
    * Every height the sheet passes through, including each pixel of a drag. For anything
    * that has to track the sheet continuously, and cheap enough to do so.
@@ -79,6 +85,15 @@ export function BottomSheet({
     [onHeightChange],
   );
 
+  /**
+   * The four heights as they stand right now.
+   *
+   * Measured on every use rather than held: the visible height changes when the phone
+   * turns, when the keyboard opens, and on Android every time the URL bar slides in or
+   * out, and a sheet sized for the old one either floats or runs off the screen.
+   */
+  const heights = () => snapHeights(visibleHeight(), topGap);
+
   /** A height that is not on its way anywhere: reported to both callbacks. */
   const rest = useCallback(
     (next: number) => {
@@ -88,22 +103,19 @@ export function BottomSheet({
     [report, onSettle],
   );
 
-  // The viewport changes when the on-screen keyboard opens or the phone turns, and a
-  // sheet still sized for the old one either floats or covers the map.
   useEffect(() => {
-    const resize = () => rest(snapHeights(window.innerHeight)[snap]);
+    const resize = () => rest(heights()[snap]);
     resize();
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, [snap, rest]);
+    return onViewportChange(resize);
+  }, [snap, rest, topGap]);
 
   const settle = (target: number) => {
-    const heights = snapHeights(window.innerHeight);
-    const nearest = (Object.keys(heights) as Snap[]).reduce((best, key) =>
-      Math.abs(heights[key] - target) < Math.abs(heights[best] - target) ? key : best,
+    const snaps = heights();
+    const nearest = (Object.keys(snaps) as Snap[]).reduce((best, key) =>
+      Math.abs(snaps[key] - target) < Math.abs(snaps[best] - target) ? key : best,
     );
     setSnap(nearest);
-    rest(heights[nearest]);
+    rest(snaps[nearest]);
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -117,8 +129,8 @@ export function BottomSheet({
     if (!state) return;
     const delta = state.startY - e.clientY;
     if (Math.abs(delta) > 6) state.moved = true;
-    const heights = snapHeights(window.innerHeight);
-    report(Math.min(heights.full, Math.max(heights.tucked, state.startHeight + delta)));
+    const snaps = heights();
+    report(Math.min(snaps.full, Math.max(snaps.tucked, state.startHeight + delta)));
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -144,7 +156,7 @@ export function BottomSheet({
     const order: Snap[] = ["peek", "half", "full"];
     const next = snap === "tucked" ? "peek" : order[(order.indexOf(snap) + 1) % order.length]!;
     setSnap(next);
-    rest(snapHeights(window.innerHeight)[next]);
+    rest(heights()[next]);
   };
 
   // Escape gets out of a covered map without hunting for the handle.
@@ -153,7 +165,7 @@ export function BottomSheet({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       setSnap("peek");
-      rest(snapHeights(window.innerHeight).peek);
+      rest(heights().peek);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -168,7 +180,7 @@ export function BottomSheet({
       aria-label={label}
       style={{ height }}
       className={cn(
-        "pointer-events-auto fixed inset-x-0 bottom-[calc(3.5rem+max(0.75rem,env(safe-area-inset-bottom,0px)))] z-20 flex flex-col rounded-t-[var(--radius-sheet)] bg-[var(--color-surface)]/92 shadow-[var(--shadow-sheet)] backdrop-blur-xl",
+        "pointer-events-auto fixed inset-x-0 bottom-[calc(3.5rem+max(0.75rem,env(safe-area-inset-bottom,0px))+var(--browser-chrome))] z-20 flex flex-col rounded-t-[var(--radius-sheet)] bg-[var(--color-surface)]/92 shadow-[var(--shadow-sheet)] backdrop-blur-xl",
         !dragging && !reduceMotion && "transition-[height] duration-200",
       )}
     >

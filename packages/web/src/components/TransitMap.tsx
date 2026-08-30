@@ -409,6 +409,7 @@ export function TransitMap({
   neighbourhood,
   showVehicles = false,
   vehicleTrip = null,
+  topInset = 120,
   bottomInset = 0,
   className,
 }: {
@@ -426,6 +427,12 @@ export function TransitMap({
    * not need a notice for that.
    */
   vehicleTrip?: VehicleTrip | null;
+  /**
+   * Pixels at the top covered by the app's own floating controls, used as camera padding
+   * for the same reason as `bottomInset`. It is the caller's measurement rather than a
+   * number here, because the controls are as tall as the labels in them.
+   */
+  topInset?: number;
   /**
    * Pixels at the bottom covered by something else, such as the commute sheet, used as
    * camera padding so a fitted trip lands above it. The settled height, not the live
@@ -462,6 +469,8 @@ export function TransitMap({
    */
   const insetRef = useRef(0);
   insetRef.current = Math.min(bottomInset, Math.round(window.innerHeight * 0.4));
+  const topRef = useRef(0);
+  topRef.current = topInset;
 
   useEffect(() => {
     if (!container.current || map.current) return;
@@ -606,10 +615,10 @@ export function TransitMap({
     const bounds = option ? boundsOfOption(option) : drawn ? boundsOf(drawn) : null;
     if (bounds) {
       instance.fitBounds(bounds, {
-        // The sheet covers the bottom of the map, so the padding has to keep the trip
-        // above it rather than centring it under the rows; the sides leave room for a
-        // callout to hang off its stop.
-        padding: { top: 120, bottom: 48 + insetRef.current, left: 40, right: 40 },
+        // The sheet covers the bottom of the map and the controls cover the top, so the
+        // padding has to keep the trip between them rather than centring it under the
+        // rows; the sides leave room for a callout to hang off its stop.
+        padding: { top: topRef.current, bottom: 48 + insetRef.current, left: 40, right: 40 },
         maxZoom: 15,
         // Respect a reduced-motion preference rather than flying the camera.
         animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,

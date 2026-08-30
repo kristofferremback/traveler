@@ -35,6 +35,10 @@ const TransitMap = lazy(() =>
 const TICK_MS = 10_000;
 /** How far "Tidigare" moves the planning time per tap. */
 const EARLIER_MS = 10 * 60_000;
+/** The floating controls at their usual height, until the first measurement lands. */
+const CONTROLS_HEIGHT = 124;
+/** Map left between the controls and anything below them. */
+const CONTROLS_CLEARANCE = 8;
 
 type Position = { lat: number; lon: number };
 
@@ -279,6 +283,30 @@ export function CommutePage() {
   }, []);
 
   /**
+   * How tall the floating controls are, measured rather than assumed.
+   *
+   * The card and the two pills under it are as tall as their longest label: "Framme
+   * imorgon 09:00" beside "Bara buss och båt" needs a second row where "Nu" beside
+   * "Färdmedel" does not. Three things have to know where that stack ends: MapLibre's
+   * own buttons, which sit in a DOM the app does not render and so are moved by a CSS
+   * variable, the sheet, which must not cover the stack when it is opened fully, and the
+   * camera, which must not fit a trip underneath it.
+   */
+  const controls = useRef<HTMLDivElement>(null);
+  const [controlsHeight, setControlsHeight] = useState(CONTROLS_HEIGHT);
+  useEffect(() => {
+    const node = controls.current;
+    if (!node) return;
+    const watch = new ResizeObserver(() => {
+      const height = Math.round(node.getBoundingClientRect().height);
+      root.current?.style.setProperty("--map-top", `${height}px`);
+      setControlsHeight(height);
+    });
+    watch.observe(node);
+    return () => watch.disconnect();
+  }, []);
+
+  /**
    * The picker is a history entry, so Back closes it.
    *
    * Choosing a place replaces that entry with the new trip: the picker never survives in
@@ -366,6 +394,7 @@ export function CommutePage() {
         <TransitMap
           option={selected}
           vehicleTrip={vehicleTrip}
+          topInset={controlsHeight + CONTROLS_CLEARANCE}
           bottomInset={sheetHeight}
           className="commute-map relative size-full"
         />
@@ -373,7 +402,10 @@ export function CommutePage() {
 
       {/* Above the map, out of its way: the controls sit in a column that does not take
           pointer events except where a control actually is. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 safe-top">
+      <div
+        ref={controls}
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 safe-top"
+      >
         <TripControl
           fromLabel={fromLabel}
           toLabel={toLabel}
@@ -384,7 +416,12 @@ export function CommutePage() {
         />
       </div>
 
-      <BottomSheet label="Resor härifrån" onHeightChange={trackSheet} onSettle={setSheetHeight}>
+      <BottomSheet
+        label="Resor härifrån"
+        topGap={controlsHeight + CONTROLS_CLEARANCE}
+        onHeightChange={trackSheet}
+        onSettle={setSheetHeight}
+      >
         <div className="space-y-2 px-3 pb-4">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-[var(--color-muted)]">

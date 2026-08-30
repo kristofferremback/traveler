@@ -30,6 +30,8 @@
 
 :root {
   color-scheme: dark;
+  /* How much of a fixed box's bottom the browser's own UI covers; see lib/viewport.ts. */
+  --browser-chrome: 0px;
 }
 
 @media (prefers-color-scheme: light) {
@@ -91,9 +93,15 @@
  * MapLibre's controls are 29 px, which is fine for a mouse and not for a thumb, and its
  * attribution sits exactly where the sheet does. Both are moved rather than hidden: the
  * attribution is the basemap's licence, not decoration.
+ *
+ * Zoom and locate start below the app's own stack of controls rather than at a fixed
+ * distance from the top. The distance was 3.75rem, which cleared the card but not the
+ * pills under it, so the filter pill and the zoom button sat on top of each other.
+ * `--map-top` is that stack measured, published by the screen that renders it; the
+ * fallback is its resting height, for the moment before the first measurement lands.
  */
 .commute-map .maplibregl-ctrl-top-right {
-  top: calc(3.75rem + env(safe-area-inset-top, 0px));
+  top: calc(var(--map-top, 7.75rem) + 0.5rem);
 }
 
 .commute-map .maplibregl-ctrl-group button {
@@ -112,7 +120,10 @@
  */
 .commute-map .maplibregl-ctrl-bottom-right,
 .commute-map .maplibregl-ctrl-bottom-left {
-  bottom: calc(3.5rem + max(0.75rem, env(safe-area-inset-bottom, 0px)) + var(--map-inset, 0px));
+  bottom: calc(
+    3.5rem + max(0.75rem, env(safe-area-inset-bottom, 0px)) + var(--map-inset, 0px) +
+      var(--browser-chrome)
+  );
   /* The sheet slides between its heights; a licence that jumps ahead of it looks loose. */
   transition: bottom 200ms;
 }
@@ -130,7 +141,9 @@
 
 /* Floating above the tab bar (3.5rem plus its safe-area padding), like the map controls. */
 @utility above-tabs {
-  bottom: calc(3.5rem + max(0.75rem, env(safe-area-inset-bottom, 0px)) + 0.75rem);
+  bottom: calc(
+    3.5rem + max(0.75rem, env(safe-area-inset-bottom, 0px)) + 0.75rem + var(--browser-chrome)
+  );
 }
 
 @utility safe-top {
