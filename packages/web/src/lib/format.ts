@@ -32,9 +32,17 @@ export function formatDay(instant: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? "" : dayFormat.format(date);
 }
 
-/** Stockholm's calendar day, so "today" flips at local midnight rather than UTC. */
+/**
+ * Stockholm's calendar day, so "today" flips at local midnight rather than UTC.
+ *
+ * The formatter is built once, like the two above it. Building one costs about as much
+ * as formatting a hundred dates, and this runs three times per row of a list that
+ * re-renders on a ten second clock and on every pixel of a sheet drag.
+ */
+const dayKeyFormat = new Intl.DateTimeFormat("sv-SE", { timeZone: STOCKHOLM });
+
 function stockholmDay(date: Date): string {
-  return new Intl.DateTimeFormat("sv-SE", { timeZone: STOCKHOLM }).format(date);
+  return dayKeyFormat.format(date);
 }
 
 export function dayLabel(instant: string | null | undefined): string | null {
