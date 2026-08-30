@@ -39,7 +39,10 @@ export function TripControl({
         </button>
         <End end="to" caption="Till" label={toLabel} onOpen={onOpen} />
       </div>
-      <div className="flex items-center gap-2">
+      {/* Wraps rather than overflows: "Framme tis 2 sep 09:00" beside "Bara buss och båt"
+          is wider than a phone, and a pill that runs off the edge takes the map's own
+          buttons with it. A second row costs 52 px, and only in that state. */}
+      <div className="flex w-full flex-wrap items-center gap-2">
         <TimePill time={time} onOpen={() => onOpen("time")} />
         {trailing}
       </div>

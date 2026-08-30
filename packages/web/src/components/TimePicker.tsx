@@ -22,7 +22,7 @@ export function TimePill({ time, onOpen }: { time: PlanTime; onOpen: () => void 
       onClick={onOpen}
       aria-haspopup="dialog"
       className={cn(
-        "pointer-events-auto inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface)]/90 px-3.5 text-sm font-medium shadow-[var(--shadow-float)] backdrop-blur-xl",
+        "pointer-events-auto inline-flex min-h-11 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface)]/90 px-3.5 text-sm font-medium shadow-[var(--shadow-float)] backdrop-blur-xl",
         time && "text-[var(--color-accent)]",
       )}
     >
@@ -36,7 +36,7 @@ function describe(time: PlanTime): string {
   if (!time) return "Nu";
   const day = dayLabel(time.when);
   const clock = `${day ? `${day} ` : ""}${formatTime(time.when)}`;
-  return time.arriveBy ? `Framme senast ${clock}` : `Avgång ${clock}`;
+  return time.arriveBy ? `Framme ${clock}` : `Avgång ${clock}`;
 }
 
 /** The next whole five minutes, so a fresh picker does not open on 14:37. */

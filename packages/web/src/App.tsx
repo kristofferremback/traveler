@@ -50,7 +50,7 @@ function TabBar() {
   return (
     <nav
       aria-label="Huvudmeny"
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur safe-bottom"
+      className="fixed inset-x-0 bottom-[var(--browser-chrome)] z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur safe-bottom"
     >
       <ul className="mx-auto flex max-w-2xl">
         {TABS.map(({ to, label, icon: Icon, end }) => (
