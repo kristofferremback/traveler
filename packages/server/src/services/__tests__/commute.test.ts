@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CommuteSettings, Journey, NeighbourStop } from "@traveler/shared";
-import { foldDrafts, parseRef, type Draft } from "../commute.ts";
+import { foldDrafts, parseRef, sitesToAsk, type Draft } from "../commute.ts";
 
 const settings: CommuteSettings = {
   speedKmh: 6,
@@ -13,13 +13,19 @@ const settings: CommuteSettings = {
 const T0 = Date.parse("2026-08-24T15:30:00Z");
 const min = (n: number) => n * 60_000;
 
-function stop(id: number, name: string, walkSeconds: number): NeighbourStop {
+function stop(
+  id: number,
+  name: string,
+  walkSeconds: number,
+  mode: NeighbourStop["mode"] = "BUS",
+  siteGid = `909100100000${id}`,
+): NeighbourStop {
   return {
     stopPointId: id,
     siteId: id,
-    siteGid: `909100100000${id}`,
+    siteGid,
     name,
-    mode: "BUS",
+    mode,
     lat: 59.3,
     lon: 18.1,
     metres: walkSeconds,
@@ -246,5 +252,47 @@ describe("parseRef", () => {
 
   test("a coordinate off the globe is not a coordinate", () => {
     expect(parseRef("95.0,18.0")).toEqual({ kind: "place", id: "95.0,18.0" });
+  });
+});
+
+describe("sitesToAsk", () => {
+  // Kris's own neighbourhood, in walking order: the bus stops are nearer than the pier.
+  const near = [
+    stop(1, "Jarlaberg", 60),
+    stop(2, "Cylindervägen", 360),
+    stop(3, "Nacka strand", 480, "BUS", "9091001000001000"),
+    stop(4, "Nacka strand (brygga)", 700, "SHIP", "9091001000001000"),
+    stop(5, "Nacka trafikplats", 540),
+  ];
+  const names = (m: Map<string, NeighbourStop>) => [...m.values()].map((s) => s.name);
+
+  test("without a filter, one entry per site, nearest first", () => {
+    expect(names(sitesToAsk(near, "origin"))).toEqual([
+      "Jarlaberg",
+      "Cylindervägen",
+      "Nacka strand",
+      "Nacka trafikplats",
+    ]);
+  });
+
+  test("a mode filter drops the stops you would not board", () => {
+    expect(names(sitesToAsk(near, "origin", ["SHIP", "FERRY"]))).toEqual(["Nacka strand (brygga)"]);
+  });
+
+  test("the filter picks which stop point speaks for a site", () => {
+    // Nacka strand is one site with a bus shelter and a pier three minutes further on.
+    // The chosen stop is what the request time is shifted by, so a boat search that
+    // kept the shelter would ask SL about the wrong minute as well as the wrong walk.
+    const boat = sitesToAsk(near, "origin", ["SHIP", "FERRY"]).get("9091001000001000");
+    expect(boat?.secondsTo).toBe(700);
+  });
+
+  test("nothing to board within walking distance is an empty set, not a wider search", () => {
+    expect(sitesToAsk(near, "origin", ["METRO"]).size).toBe(0);
+  });
+
+  test("arriving, the sites are ordered by the walk home", () => {
+    const homeward = [stop(1, "Jarlaberg", 60), stop(2, "Cylindervägen", 30)];
+    expect(names(sitesToAsk(homeward, "destination"))).toEqual(["Cylindervägen", "Jarlaberg"]);
   });
 });

@@ -150,6 +150,7 @@ export const api = {
       to: string;
       when?: string;
       arriveBy?: "1";
+      modes?: string;
       paths?: "recommended" | "all" | "none";
     },
     signal?: AbortSignal,

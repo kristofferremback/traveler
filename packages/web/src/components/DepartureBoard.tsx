@@ -1,26 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DeparturesResponse, TransportMode } from "@traveler/shared";
+import type { DeparturesResponse } from "@traveler/shared";
 import { RefreshCw, TriangleAlert } from "lucide-react";
 import { streams } from "@/lib/api";
 import { useStream } from "@/hooks/useStream";
 import { formatDelay, formatTime } from "@/lib/format";
-import { MODE_LABEL } from "@/lib/modes";
+import { MODE_FILTERS, MODE_LABEL, type ModeFilter } from "@/lib/modes";
 import { LineBadge } from "./LineBadge";
 import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
 import { cn } from "@/lib/utils";
 
-const FILTERS: { mode: TransportMode | null; label: string }[] = [
-  { mode: null, label: "Alla" },
-  { mode: "METRO", label: "Tunnelbana" },
-  { mode: "BUS", label: "Buss" },
-  { mode: "TRAIN", label: "Pendeltåg" },
-  { mode: "TRAM", label: "Spårvagn" },
-  { mode: "SHIP", label: "Båt" },
-];
-
 export function DepartureBoard({ siteId, siteName }: { siteId: number; siteName?: string }) {
-  const [mode, setMode] = useState<TransportMode | null>(null);
+  // The same list the trip screens filter by, so "Båt" means the same thing on a
+  // timetable as it does in a search -- and covers the ferry berths, which the board's
+  // own copy of this list used to leave off the board entirely.
+  const [mode, setMode] = useState<ModeFilter | null>(null);
 
   // The stream is deliberately unfiltered and the mode filter is applied here.
   //
@@ -37,11 +31,11 @@ export function DepartureBoard({ siteId, siteName }: { siteId: number; siteName?
   // for it, so a quiet stretch on one mode never removes the way back to "Alla".
   const availableModes = useMemo(() => {
     const present = new Set(data?.departures.map((d) => d.line.mode) ?? []);
-    return FILTERS.filter((f) => f.mode === null || present.has(f.mode) || f.mode === mode);
+    return MODE_FILTERS.filter((f) => f === mode || f.modes.some((m) => present.has(m)));
   }, [data, mode]);
 
   const departures = useMemo(
-    () => (data?.departures ?? []).filter((d) => mode === null || d.line.mode === mode),
+    () => (data?.departures ?? []).filter((d) => !mode || mode.modes.includes(d.line.mode)),
     [data, mode],
   );
 
@@ -57,26 +51,26 @@ export function DepartureBoard({ siteId, siteName }: { siteId: number; siteName?
 
   return (
     <section aria-label={`Avgångar från ${siteName ?? data?.siteName ?? "hållplats"}`}>
-      {availableModes.length > 2 || mode !== null ? (
+      {availableModes.length > 1 || mode !== null ? (
         <div
           role="tablist"
           aria-label="Filtrera färdmedel"
           className="mb-3 flex gap-1.5 overflow-x-auto pb-1"
         >
-          {availableModes.map((filter) => (
+          {[null, ...availableModes].map((filter) => (
             <button
-              key={filter.label}
+              key={filter?.label ?? "alla"}
               role="tab"
-              aria-selected={mode === filter.mode}
-              onClick={() => setMode(filter.mode)}
+              aria-selected={mode === filter}
+              onClick={() => setMode(filter)}
               className={cn(
                 "min-h-11 min-w-20 shrink-0 rounded-full border px-4 text-xs",
-                mode === filter.mode
+                mode === filter
                   ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-bg)]"
                   : "border-[var(--color-border)] text-[var(--color-muted)]",
               )}
             >
-              {filter.label}
+              {filter?.label ?? "Alla"}
             </button>
           ))}
         </div>

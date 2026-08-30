@@ -815,6 +815,57 @@ test.describe("the commute screen", () => {
     await expect(rows(page).getByText("Rekommenderad")).toHaveCount(1);
   });
 
+  /** The mode filter's pill, whatever it currently says. */
+  const modePill = (page: Page) =>
+    page.getByRole("button", { name: /^Färdmedel$|^Bara |^Utan |^\d+ färdmedel$/ });
+
+  /** Tick one mode and close the picker. */
+  const pickMode = async (page: Page, label: string) => {
+    await modePill(page).click();
+    const picker = page.getByRole("dialog", { name: "Välj färdmedel" });
+    await expect(picker).toBeVisible();
+    await picker.getByRole("checkbox", { name: label }).check();
+    await picker.getByRole("button", { name: "Klar" }).click();
+    await expect(picker).toBeHidden();
+  };
+
+  test("a mode filter narrows the question and rides in the URL", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/commute")) asked.push(r.url());
+    });
+    await open(page);
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+
+    await pickMode(page, "Buss");
+    await expect(modePill(page)).toHaveText("Bara buss");
+    await expect(page).toHaveURL(/modes=BUS/);
+    // The filter is part of the question, not something applied to the answer: the
+    // engine has to know, because which stops it enumerates depends on it.
+    await expect.poll(() => asked.some((url) => url.includes("modes=BUS"))).toBe(true);
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+
+    // A link carries it, the way the places and the time do.
+    await page.reload();
+    await expect(modePill(page)).toHaveText("Bara buss");
+  });
+
+  test("a mode that goes nowhere near you says so instead of showing an empty list", async ({
+    page,
+  }) => {
+    // Jarlaberg is the quiet end, so it is the end the engine enumerates, and there is
+    // no metro within walking distance of it. Without the filter reaching the
+    // enumeration this would be twelve pointless requests to SL and a blank sheet.
+    await open(page);
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+
+    await pickMode(page, "Tunnelbana");
+    await expect(sheet(page)).toContainText("Inga hållplatser för de valda färdmedlen", {
+      timeout: 120_000,
+    });
+    await expect(rows(page)).toHaveCount(0);
+  });
+
   test("the sheet tucks to its handle and a tap brings it back", async ({ page }) => {
     await open(page);
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });

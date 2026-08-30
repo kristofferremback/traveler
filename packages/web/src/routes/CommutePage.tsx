@@ -6,11 +6,13 @@ import { api, ApiError } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import { useOverlay } from "@/lib/overlay";
 import { accumulate, type Answered } from "@/lib/trips";
+import { parseModes } from "@/lib/modes";
 import { BottomSheet, PEEK_HEIGHT } from "@/components/BottomSheet";
 import { CommuteRows } from "@/components/CommuteRows";
 import { TripView } from "@/components/TripView";
 import { PlaceSearch, type PlaceChoice } from "@/components/PlaceSearch";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
+import { ModePicker, ModePill } from "@/components/ModePicker";
 import { TripControl } from "@/components/TripControl";
 import type { VehicleTrip } from "@/components/TransitMap";
 import { Button } from "@/components/ui/button";
@@ -91,6 +93,14 @@ export function CommutePage() {
   const when = params.get("when");
   const time: PlanTime = when ? { when, arriveBy: params.get("arriveBy") === "1" } : null;
 
+  /**
+   * The mode filter, in the URL beside the places and the time because it is part of
+   * the same question. `modeKey` is the canonical spelling of it: the parameter is
+   * normalised on the way in, so it is safe to compare and to key a query by.
+   */
+  const modes = useMemo(() => parseModes(params.get("modes")), [params]);
+  const modeKey = modes.join(",");
+
   const [positionDenied, setPositionDenied] = useState(false);
   const needsPosition = fromRef === "me" || toRef === "me";
   const sameEnds = Boolean(fromRef && toRef && fromRef === toRef);
@@ -121,7 +131,7 @@ export function CommutePage() {
   const hereRef = useRef<Position | null>(null);
 
   const commute = useQuery({
-    queryKey: ["commute", fromRef, toRef, time?.when ?? null, time?.arriveBy ?? false],
+    queryKey: ["commute", fromRef, toRef, time?.when ?? null, time?.arriveBy ?? false, modeKey],
     enabled: armed && Boolean(fromRef && toRef) && !sameEnds,
     // A new time keeps the old answer on screen until the new one has arrived.
     placeholderData: keepPreviousData,
@@ -146,6 +156,7 @@ export function CommutePage() {
           from: asApiRef(fromRef!),
           to: asApiRef(toRef!),
           ...(time ? { when: time.when, ...(time.arriveBy ? { arriveBy: "1" as const } : {}) } : {}),
+          ...(modeKey ? { modes: modeKey } : {}),
           paths: paths.current,
         },
         signal,
@@ -177,11 +188,11 @@ export function CommutePage() {
     // Placeholder data is the previous question's answer, held on screen while this one
     // loads. Shown, never merged: folding it in would make it part of the new list.
     if (!commute.data || commute.isPlaceholderData) return seen.current.options;
-    const key = `${fromRef}|${toRef}|${time?.arriveBy ? "arr" : "dep"}|${time?.when ?? "now"}`;
+    const key = `${fromRef}|${toRef}|${time?.arriveBy ? "arr" : "dep"}|${time?.when ?? "now"}|${modeKey}`;
     seen.current = accumulate(seen.current, key, commute.data.options, extending.current);
     extending.current = false;
     return seen.current.options;
-  }, [commute.data, commute.isPlaceholderData, fromRef, toRef, time?.arriveBy, time?.when]);
+  }, [commute.data, commute.isPlaceholderData, fromRef, toRef, time?.arriveBy, time?.when, modeKey]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /**
@@ -198,12 +209,14 @@ export function CommutePage() {
     null;
 
   // A new pair of places is a new list; keeping the old selection would draw a trip
-  // that is no longer on screen. A new time keeps it: the merged list still has it.
+  // that is no longer on screen. So is a new mode filter, which is the same list minus
+  // whatever the traveller just ruled out. A new time keeps it: the merged list still
+  // has it.
   useEffect(() => {
     setSelectedId(null);
     setPicks(new Map());
     paths.current = "recommended";
-  }, [fromRef, toRef, time?.arriveBy]);
+  }, [fromRef, toRef, time?.arriveBy, modeKey]);
 
   const select = useCallback(
     (option: CommuteOption) => {
@@ -241,8 +254,11 @@ export function CommutePage() {
    * the history it opened from, and Back from the result goes to the trip before it.
    */
   const { open: overlay, show: openOverlay, close: closeOverlay, settle } = useOverlay<string>();
-  const picker = overlay === "from" || overlay === "to" || overlay === "time" ? overlay : null;
-  const openPicker = openOverlay as (which: "from" | "to" | "time") => void;
+  const picker =
+    overlay === "from" || overlay === "to" || overlay === "time" || overlay === "modes"
+      ? overlay
+      : null;
+  const openPicker = openOverlay as (which: "from" | "to" | "time" | "modes") => void;
   const closePicker = closeOverlay;
 
   /**
@@ -264,7 +280,7 @@ export function CommutePage() {
   };
 
   const setSearch = (
-    next: Partial<Record<"from" | "to" | "when" | "arriveBy", string | null>>,
+    next: Partial<Record<"from" | "to" | "when" | "arriveBy" | "modes", string | null>>,
     fromPicker: boolean,
   ) => {
     const search = new URLSearchParams(params);
@@ -281,6 +297,7 @@ export function CommutePage() {
     setSearch(next, fromPicker);
   const setTime = (next: PlanTime) =>
     setSearch({ when: next?.when ?? null, arriveBy: next?.arriveBy ? "1" : null }, true);
+  const setModes = (next: string[]) => setSearch({ modes: next.join(",") || null }, true);
 
   const swap = () => setEnds({ from: toRef, to: fromRef }, false);
 
@@ -332,6 +349,7 @@ export function CommutePage() {
           time={time}
           onOpen={openPicker}
           onSwap={swap}
+          trailing={<ModePill modes={modes} onOpen={() => openPicker("modes")} />}
         />
       </div>
 
@@ -448,9 +466,11 @@ export function CommutePage() {
 
           {commute.isSuccess && options.length === 0 ? (
             <p className="py-2 text-sm">
-              {time?.arriveBy
-                ? "Ingen resa hinner fram i tid. Prova en senare tid eller en annan plats."
-                : "Ingen resa de närmaste timmarna. Prova en annan plats eller planera resan."}
+              {modes.length > 0
+                ? "Ingen resa med de valda färdmedlen. Prova fler färdmedel eller en annan tid."
+                : time?.arriveBy
+                  ? "Ingen resa hinner fram i tid. Prova en senare tid eller en annan plats."
+                  : "Ingen resa de närmaste timmarna. Prova en annan plats eller planera resan."}
             </p>
           ) : null}
 
@@ -464,6 +484,10 @@ export function CommutePage() {
 
       {picker === "time" ? (
         <TimePicker time={time} onPick={setTime} onClose={closePicker} />
+      ) : null}
+
+      {picker === "modes" ? (
+        <ModePicker modes={modes} onPick={setModes} onClose={closePicker} />
       ) : null}
 
       {picker === "from" || picker === "to" ? (
