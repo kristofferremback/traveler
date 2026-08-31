@@ -121,6 +121,12 @@ export function CommuteRows({
         // first row it applies to, and today is left unsaid because it is the default.
         const day = dayLabel(option.leaveAt);
         const above = i > 0 ? dayLabel(options[i - 1]!.leaveAt) : null;
+        const marks = [
+          day && day !== above ? day : null,
+          // The departure is real; the arrival is a sibling run's estimate, and a row
+          // that knows less than its neighbours has to say so.
+          option.timetabled ? "Enligt tidtabell" : null,
+        ].filter(Boolean);
         return (
           <li key={option.id}>
             <TripRow
@@ -128,7 +134,7 @@ export function CommuteRows({
               now={now}
               selected={option.id === selectedId}
               onOpen={onOpen}
-              note={day && day !== above ? day : null}
+              note={marks.length > 0 ? marks.join(" · ") : null}
               className="rounded-none"
             />
           </li>

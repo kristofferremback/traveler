@@ -1054,6 +1054,47 @@ test.describe("the commute screen", () => {
     await expect(page).toHaveURL(/^(?!.*when=).*$/);
   });
 
+  test("Senare asks past the last row on screen and joins the answer underneath", async ({ page }) => {
+    await open(page);
+    await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
+    const earlier = page.getByRole("button", { name: "Tidigare" });
+    const later = page.getByRole("button", { name: "Senare" });
+    await expect(later).toBeVisible();
+
+    // Each button stands where its own answer will appear. Tidigare above the list,
+    // because earlier trips join at the top; Senare below, because later ones join at
+    // the bottom. A button on the wrong side of the rows points the wrong way.
+    const above = (await earlier.boundingBox())!;
+    const top = (await rows(page).first().boundingBox())!;
+    const below = (await later.boundingBox())!;
+    expect(above.y + above.height).toBeLessThanOrEqual(top.y + 1);
+    expect(below.y).toBeGreaterThanOrEqual(top.y + top.height - 1);
+
+    // The arrival time rather than the row's first line: the leave column counts down,
+    // so it is the one part of the row that changes on its own while the test watches.
+    const arrival = /Framme \d{2}:\d{2}/.exec((await rows(page).first().textContent())!)![0];
+    const countBefore = await rows(page).count();
+    await later.click();
+    // Read after the click, as Tidigare's test does: the button is under the whole list
+    // and scrolling to it takes real time.
+    const clicked = Date.now();
+
+    await expect(page).toHaveURL(/when=/);
+    // Forwards, and by the list rather than by a fixed step: the ask is anchored a
+    // minute past the latest departure already on screen, which is never before the tap.
+    const when = new URL(page.url()).searchParams.get("when")!;
+    expect(new Date(when).getTime()).toBeGreaterThan(clicked);
+    await expect(page.getByRole("button", { name: /^Avgång/ })).toBeVisible();
+
+    // Asking for later adds to the list; what was on screen stays on screen. How much
+    // it adds is SL's business -- there may be nothing more within the horizon -- so the
+    // fact worth asserting is that nothing was taken away.
+    await expect(rows(page).filter({ hasText: arrival }).first()).toBeVisible();
+    await expect.poll(() => rows(page).count(), { timeout: 60_000 }).toBeGreaterThanOrEqual(countBefore);
+    // And Tidigare is still there, above the list, where the other direction lives.
+    await expect(earlier).toBeVisible();
+  });
+
   test("refreshing plans from where the phone is now, not where it was", async ({ page, context }) => {
     await context.grantPermissions(["geolocation"]);
     // Slussen first, then Jarlaberg: the same commute, from the other end.

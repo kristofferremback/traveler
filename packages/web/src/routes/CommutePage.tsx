@@ -16,7 +16,7 @@ import { ModePicker, ModePill } from "@/components/ModePicker";
 import { TripControl } from "@/components/TripControl";
 import type { VehicleTrip } from "@/components/TransitMap";
 import { Button } from "@/components/ui/button";
-import { History, RefreshCw, Search } from "lucide-react";
+import { ClockArrowDown, History, RefreshCw, Search } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -378,6 +378,30 @@ export function CommutePage() {
     });
   };
 
+  /**
+   * One minute past the last departure on screen, so the next answer starts where this
+   * one ends. Anchored on the rows rather than a fixed step because the engine answers
+   * with however far SL felt like enumerating; a fixed step would either re-fetch the
+   * same trips or leap over some.
+   */
+  const later = () => {
+    setArmed(true);
+    extending.current = true;
+    const anchor = options
+      .filter((o) => o.status !== "missed")
+      .reduce(
+        (last, o) => Math.max(last, new Date(o.leaveAt).getTime()),
+        time ? new Date(time.when).getTime() : Date.now(),
+      );
+    navigate({
+      pathname: location.pathname,
+      search: `?${new URLSearchParams({
+        ...Object.fromEntries(params),
+        when: new Date(anchor + 60_000).toISOString(),
+      }).toString()}`,
+    });
+  };
+
   const fromLabel = useRefLabel(fromRef, saved, positionDenied);
   const toLabel = useRefLabel(toRef, saved, positionDenied);
   /** The destination as the API takes it, for branches. Null until a fix exists, if one is needed. */
@@ -506,6 +530,21 @@ export function CommutePage() {
             </ul>
           ) : null}
 
+          {/* Paging reads down the clock: earlier trips join at the top, later at the
+              bottom, so each button sits where its answer will appear. */}
+          {commute.isSuccess && !opened && !time?.arriveBy && options.length > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={earlier}
+              className="w-full rounded-full"
+            >
+              <History />
+              Tidigare
+            </Button>
+          ) : null}
+
           {opened && toApi ? (
             <TripView
               option={opened}
@@ -519,19 +558,6 @@ export function CommutePage() {
             <CommuteRows options={options} selectedId={selected?.id ?? null} now={now} onOpen={openTrip} />
           ) : null}
 
-          {commute.isSuccess && !opened && !time?.arriveBy ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={earlier}
-              className="w-full rounded-full"
-            >
-              <History />
-              Tidigare
-            </Button>
-          ) : null}
-
           {commute.isSuccess && options.length === 0 ? (
             <p className="py-2 text-sm">
               {modes.length > 0
@@ -540,6 +566,35 @@ export function CommutePage() {
                   ? "Ingen resa hinner fram i tid. Prova en senare tid eller en annan plats."
                   : "Ingen resa de närmaste timmarna. Prova en annan plats eller planera resan."}
             </p>
+          ) : null}
+
+          {commute.isSuccess && !opened && !time?.arriveBy ? (
+            <div className="flex gap-2">
+              {/* With no rows there is no top for Tidigare to sit above, so the two
+                  directions share the one line. */}
+              {options.length === 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={earlier}
+                  className="flex-1 rounded-full"
+                >
+                  <History />
+                  Tidigare
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={later}
+                className="flex-1 rounded-full"
+              >
+                <ClockArrowDown />
+                Senare
+              </Button>
+            </div>
           ) : null}
 
           {commute.data?.notices.map((notice) => (
