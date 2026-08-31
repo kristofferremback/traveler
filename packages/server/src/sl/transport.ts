@@ -163,7 +163,15 @@ export type DeparturesResult = {
 
 export async function fetchDepartures(
   siteId: number,
-  opts: { forecast?: number; modes?: TransportMode[]; line?: string; direction?: number } = {},
+  opts: {
+    forecast?: number;
+    modes?: TransportMode[];
+    line?: string;
+    direction?: number;
+    /** For callers whose screen cannot wait out the default budget. */
+    timeoutMs?: number;
+    retries?: number;
+  } = {},
 ): Promise<DeparturesResult> {
   const raw = await getJson<SlDeparturesResponse>(`${BASE}/sites/${siteId}/departures`, {
     upstream: "sl-transport/departures",
@@ -176,7 +184,8 @@ export async function fetchDepartures(
       transport:
         opts.modes?.length === 1 && opts.modes[0] !== "WALK" ? opts.modes[0] : undefined,
     },
-    timeoutMs: 10_000,
+    timeoutMs: opts.timeoutMs ?? 10_000,
+    retries: opts.retries,
   });
 
   const wanted = opts.modes?.length ? new Set(opts.modes) : null;

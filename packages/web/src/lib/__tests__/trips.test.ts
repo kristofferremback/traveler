@@ -64,6 +64,7 @@ function option(legs: JourneyLeg[], p: Partial<CommuteOption> = {}): CommuteOpti
     doorToDoorSeconds: 0,
     score: 0,
     status: p.status ?? "ok",
+    timetabled: p.timetabled ?? false,
     alternatives: [],
   };
 }
