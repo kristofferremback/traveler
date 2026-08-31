@@ -222,6 +222,7 @@ export function TripView({
           <p className="mt-1 text-[13px] text-[var(--color-muted)]">
             {option.transfers === 0 ? "Inget byte" : `${option.transfers} byte${option.transfers > 1 ? "n" : ""}`}
             {` · ${minutes(option.walkSeconds)} min promenad`}
+            {option.timetabled ? " · Enligt tidtabell" : null}
             {status === "recommended" ? <span className="ml-1 font-semibold text-[var(--color-accent)]">· Rekommenderad</span> : null}
             {status === "tight" ? <span className="ml-1 font-semibold text-[var(--color-warn)]">· Knappt</span> : null}
           </p>

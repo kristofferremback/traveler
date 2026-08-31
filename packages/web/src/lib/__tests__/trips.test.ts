@@ -169,6 +169,24 @@ describe("accumulate", () => {
     expect(after.options.map((o) => o.id)).toEqual(["e1", "a", "b"]);
   });
 
+  test("Senare keeps what is on screen and puts the later answer below it", () => {
+    const laterAnswer = [trip("l1", "19:05"), trip("l2", "19:10")];
+    const after = accumulate(tonight, "me|hem|dep|19:01", laterAnswer, true);
+    expect(after.options.map((o) => o.id)).toEqual(["a", "b", "l1", "l2"]);
+  });
+
+  test("an extended list carries one recommendation, the answer to the moment at hand", () => {
+    const standing = { key: "k", options: [trip("a", "18:50", "recommended"), trip("b", "18:55")] };
+    const laterAnswer = [trip("l1", "19:05", "recommended"), trip("l2", "19:10")];
+    const after = accumulate(standing, "me|hem|dep|19:00", laterAnswer, true);
+    expect(after.options.map((o) => [o.id, o.status])).toEqual([
+      ["a", "recommended"],
+      ["b", "ok"],
+      ["l1", "ok"],
+      ["l2", "ok"],
+    ]);
+  });
+
   test("re-asking the same question merges without being told to", () => {
     const after = accumulate(tonight, tonight.key, [trip("c", "19:00")], false);
     expect(after.options.map((o) => o.id)).toEqual(["c", "a", "b"]);

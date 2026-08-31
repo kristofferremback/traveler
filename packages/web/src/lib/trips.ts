@@ -55,13 +55,26 @@ export function accumulate(
   const kept = previous.key === key || extend ? previous.options : [];
   const ids = new Set(fresh.map((o) => o.id));
   const merged = [...fresh, ...kept.filter((o) => !ids.has(o.id))];
-  return {
-    key,
-    options: [
-      ...merged.filter((o) => o.status !== "missed"),
-      ...merged.filter((o) => o.status === "missed"),
-    ],
-  };
+  const live = merged.filter((o) => o.status !== "missed");
+  const missed = merged.filter((o) => o.status === "missed");
+  // An extended list is two answers ranked against two different planning times, and
+  // the rankings do not compare -- Senare's later trips would sit above the earlier
+  // ones. Down the clock is the one order both halves agree on; a single answer keeps
+  // the engine's own best-first order.
+  if (extend) {
+    live.sort((a, b) => ms(a.leaveAt) - ms(b.leaveAt));
+    missed.sort((a, b) => ms(b.leaveAt) - ms(a.leaveAt));
+    // Each answer crowned its own best, and a list with two crowns is advice that
+    // contradicts itself. The earliest keeps it: that answer was planned from the
+    // moment the traveller is actually standing in.
+    let crowned = false;
+    for (let i = 0; i < live.length; i++) {
+      if (live[i]!.status !== "recommended") continue;
+      if (!crowned) crowned = true;
+      else live[i] = { ...live[i]!, status: "ok" };
+    }
+  }
+  return { key, options: [...live, ...missed] };
 }
 
 /** The line a traveller would name when asked what they are about to get on. */
