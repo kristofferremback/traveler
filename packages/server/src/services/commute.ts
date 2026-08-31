@@ -4,6 +4,7 @@ import type {
   CommuteQuery,
   CommuteResponse,
   CommuteSettings,
+  Departure,
   Journey,
   JourneyLeg,
   NeighbourStop,
@@ -12,6 +13,8 @@ import type {
 } from "@traveler/shared";
 import { cached } from "../db/cache.ts";
 import { trips, type TripEndpoint } from "../sl/journeyplanner.ts";
+import { fetchDepartures } from "../sl/transport.ts";
+import { boardSites, fillFromBoards } from "./timetable.ts";
 import { resolvePlace } from "./places.ts";
 import { getPlace, getSettings, mergeSettings } from "./savedPlaces.ts";
 import { attachSiteIds } from "./journeys.ts";
@@ -57,6 +60,26 @@ const MATCH_TOLERANCE_M = 250;
 const HORIZON_MS = 3 * 60 * 60 * 1000;
 /** Crow-fly radius used only to decide which end is the quieter one. */
 const DENSITY_RADIUS_M = 1200;
+/**
+ * How far ahead a departure board reaches, and how many boards a plan may read.
+ *
+ * The boards patch the holes SL's planner leaves (see `timetable.ts`), so they only
+ * matter when the planned time is near enough to now for a board to say anything about
+ * it. One request per site, cached briefly so a re-ask shares it.
+ */
+const BOARD_FORECAST_MINUTES = 60;
+const BOARD_CACHE_SECONDS = 15;
+const MAX_BOARD_SITES = 6;
+/**
+ * What a board is allowed to cost.
+ *
+ * A board is enrichment on top of SL's answers, never part of the question, so a slow
+ * board means shipping those answers unfilled. On the default budget six of them in
+ * parallel could put half a minute back into exactly the tail `TRIPS_TIMEOUT_MS` exists
+ * to cut, and for a fill nobody asked for.
+ */
+const BOARD_TIMEOUT_MS = 2_500;
+const BOARD_RETRIES = 0;
 /** How far back "what did I just miss" reaches. */
 const LOOKBACK_MS = 20 * 60 * 1000;
 
@@ -165,7 +188,7 @@ function matchStop(stops: NeighbourStop[], leg: JourneyLeg, end: "origin" | "des
   return best;
 }
 
-type Side = "origin" | "destination";
+export type Side = "origin" | "destination";
 
 export type Draft = {
   journey: Journey;
@@ -179,6 +202,8 @@ export type Draft = {
   ourWalk: number;
   farWalk: number;
   transfers: number;
+  /** From the departure board, times estimated off a sibling run. Absent means SL planned it. */
+  timetabled?: boolean;
 };
 
 function sumWalk(legs: JourneyLeg[]): number {
@@ -378,6 +403,7 @@ export function foldDrafts(
       doorToDoorSeconds: Math.round((d.arriveAt - d.leaveAt) / 1000),
       score: Math.round(f.score),
       status,
+      timetabled: d.timetabled ?? false,
       alternatives: f.alternatives,
     };
   });
@@ -548,6 +574,47 @@ export async function planCommute(query: CommuteQuery, userId: string): Promise<
       seenJourneys.add(sig);
       drafts.push(d);
     }
+  }
+
+  // The boards only speak about the next hour from now, and only the answers say when
+  // this plan's rides actually leave: an arrive-by-Friday plan reads no board at all,
+  // and neither does a plan whose direct rides all sit past the forecast. The lookback
+  // matches the fill's own tolerance for "that departure is this answer".
+  const boardsCanAnswer = drafts.some(
+    (d) =>
+      d.transfers === 0 &&
+      d.boardAt >= now - 90_000 &&
+      d.boardAt <= now + BOARD_FORECAST_MINUTES * 60_000,
+  );
+  if (boardsCanAnswer) {
+    const boards = new Map<number, Departure[]>();
+    await Promise.all(
+      boardSites(drafts, side)
+        .slice(0, MAX_BOARD_SITES)
+        .map(async (siteId) => {
+          try {
+            const { departures } = await cached(
+              `board:${siteId}:${BOARD_FORECAST_MINUTES}`,
+              BOARD_CACHE_SECONDS,
+              () =>
+                fetchDepartures(siteId, {
+                  forecast: BOARD_FORECAST_MINUTES,
+                  timeoutMs: BOARD_TIMEOUT_MS,
+                  retries: BOARD_RETRIES,
+                }),
+            );
+            boards.set(siteId, departures);
+          } catch (err) {
+            // A board is enrichment on top of SL's answers, not part of the question;
+            // without it the answer is what it always was.
+            log.warn(`departures for site ${siteId} failed: ${describe(err)}`);
+          }
+        }),
+    );
+    // The same reference the fold labels "missed" against, so the boards never invent a
+    // row that arrives on the screen already behind the traveller.
+    const reference = pivot.arriveBy ? now : Math.max(pivot.at, now);
+    drafts.push(...fillFromBoards(drafts, side, boards, reference));
   }
 
   return {

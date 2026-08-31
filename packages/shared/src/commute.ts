@@ -216,6 +216,12 @@ export const CommuteOption = z.object({
   /** Lower is better. Arrival plus penalties, in seconds since the query time. */
   score: z.number(),
   status: CommuteStatus,
+  /**
+   * True when this row came from the departure board rather than the journey planner:
+   * the departure is real and realtime, but the ride's later times are a sibling run of
+   * the same line shifted to this slot, so the arrival is an estimate.
+   */
+  timetabled: z.boolean().default(false),
   /** Same vehicles, other stop to board or alight at. Never ranked above the main row. */
   alternatives: z.array(CommuteAlternative).default([]),
 });
