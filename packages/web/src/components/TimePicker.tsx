@@ -39,6 +39,9 @@ function describe(time: PlanTime): string {
   return time.arriveBy ? `Framme ${clock}` : `Avgång ${clock}`;
 }
 
+const fieldClass =
+  "min-h-11 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm";
+
 /** The next whole five minutes, so a fresh picker does not open on 14:37. */
 function roundedNow(): string {
   const step = 5 * 60_000;
@@ -49,8 +52,13 @@ function roundedNow(): string {
  * Choosing the time, and which end of the trip it pins.
  *
  * The same native dialog as the place picker, for the same reasons. The choice is held
- * locally until "Klar": a datetime field fires on every keystroke, and each of those
- * would otherwise be a URL change and a round of trip requests.
+ * locally until "Klar": the fields fire on every keystroke, and each of those would
+ * otherwise be a URL change and a round of trip requests.
+ *
+ * Time and day are two fields, time first. Nearly every use is "the 07:52 instead of
+ * now" on the day already showing, and a combined datetime field made that a walk
+ * through year, month and day before the clock could be touched. The day defaults to
+ * today, so it only needs a tap when the trip is not today's.
  */
 export function TimePicker({
   time,
@@ -62,7 +70,9 @@ export function TimePicker({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [when, setWhen] = useState(() => time?.when ?? roundedNow());
+  const [initialDay, initialClock] = instantToLocalInput(time?.when ?? roundedNow()).split("T");
+  const [day, setDay] = useState(initialDay ?? "");
+  const [clock, setClock] = useState(initialClock ?? "");
   const [arriveBy, setArriveBy] = useState(time?.arriveBy ?? false);
 
   useEffect(() => {
@@ -91,7 +101,8 @@ export function TimePicker({
         className="space-y-4 p-4"
         onSubmit={(e) => {
           e.preventDefault();
-          onPick({ when, arriveBy });
+          const when = localInputToInstant(`${day}T${clock}`);
+          if (when) onPick({ when, arriveBy });
         }}
       >
         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Vad tiden gäller">
@@ -113,21 +124,33 @@ export function TimePicker({
           </Button>
         </div>
 
-        <div className="space-y-1">
-          <label className="block text-sm" htmlFor="plan-time">
-            {arriveBy ? "Senast framme" : "Tidigast avgång"}
-          </label>
-          <input
-            id="plan-time"
-            type="datetime-local"
-            required
-            value={instantToLocalInput(when)}
-            onChange={(e) => {
-              const instant = localInputToInstant(e.target.value);
-              if (instant) setWhen(instant);
-            }}
-            className="min-h-11 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm"
-          />
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <label className="block text-sm" htmlFor="plan-time">
+              {arriveBy ? "Senast framme" : "Tidigast avgång"}
+            </label>
+            <input
+              id="plan-time"
+              type="time"
+              required
+              value={clock}
+              onChange={(e) => setClock(e.target.value)}
+              className={fieldClass}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-sm" htmlFor="plan-day">
+              Dag
+            </label>
+            <input
+              id="plan-day"
+              type="date"
+              required
+              value={day}
+              onChange={(e) => setDay(e.target.value)}
+              className={fieldClass}
+            />
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-2">

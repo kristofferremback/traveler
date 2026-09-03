@@ -102,7 +102,8 @@ export function formatDistance(metres: number | null): string | null {
 }
 
 /**
- * Turn a `datetime-local` value into an absolute instant, reading it as Stockholm time.
+ * Turn a date and a time in the native fields' shape (`2026-08-23T08:30`) into an absolute
+ * instant, reading it as Stockholm time.
  *
  * `new Date("2026-08-23T08:30")` uses the device's zone. For a phone set to another
  * country that silently shifts the requested departure by the offset between the two,
