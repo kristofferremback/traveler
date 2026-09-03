@@ -75,7 +75,7 @@ Navigable state lives in the URL. A planned trip is a link, and the fields and t
 stay aligned in both directions, including when a parameter disappears on Back.
 
 Times render in Europe/Stockholm regardless of the device's zone, in both directions:
-reading a `datetime-local` value and displaying an instant. `lib/format.ts` owns this.
+reading the date and time fields and displaying an instant. `lib/format.ts` owns this.
 
 ## Tests
 

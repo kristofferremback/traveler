@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { followInvite, mintInvite, signInContext, signInRequest, uniqueEmail, verifyUrlOf } from "./auth";
 
 /**
@@ -302,10 +302,23 @@ function tomorrowAt(hour: number, minute: number): string {
 
 /** Tomorrow's date in Stockholm plus a time, in `datetime-local` shape. */
 function localTomorrowAt(hour: number, minute: number): string {
-  const day = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(
+  return `${stockholmTomorrow()}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+/** Tomorrow's date in Stockholm, as the date field wants it. */
+function stockholmTomorrow(): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(
     new Date(Date.now() + 86_400_000),
   );
-  return `${day}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+/**
+ * Set the picker to tomorrow at a whole hour. Time first and day second, the order the
+ * fields sit in: the day defaults to today and only needs touching for another day.
+ */
+async function pickTomorrowAt(picker: Locator, label: string, hour: number) {
+  await picker.getByLabel(label).fill(`${String(hour).padStart(2, "0")}:00`);
+  await picker.getByLabel("Dag").fill(stockholmTomorrow());
 }
 
 function stockholmOffsetMinutes(at: Date): number {
@@ -662,7 +675,7 @@ test.describe("the commute screen", () => {
     await page.goto(trip);
     await page.getByRole("button", { name: /^Nu$/ }).click();
     const picker = page.getByRole("dialog", { name: "Välj tid" });
-    await picker.getByLabel("Tidigast avgång").fill(tomorrow);
+    await pickTomorrowAt(picker, "Tidigast avgång", 8);
     await picker.getByRole("button", { name: "Klar" }).click();
     await expect(rows(page).first()).toBeVisible({ timeout: 120_000 });
 
@@ -823,7 +836,7 @@ test.describe("the commute screen", () => {
     const picker = page.getByRole("dialog", { name: "Välj tid" });
     await expect(picker).toBeVisible();
     await picker.getByRole("button", { name: "Framme senast" }).click();
-    await picker.getByLabel("Senast framme").fill(localTomorrowAt(17, 0));
+    await pickTomorrowAt(picker, "Senast framme", 17);
     await picker.getByRole("button", { name: "Klar" }).click();
 
     await expect(page).toHaveURL(/arriveBy=1/);
@@ -860,7 +873,7 @@ test.describe("the commute screen", () => {
       await pill.click();
       await expect(picker).toBeVisible();
       if (first) await picker.getByRole("button", { name: "Framme senast" }).click();
-      await picker.getByLabel("Senast framme").fill(localTomorrowAt(hour, 0));
+      await pickTomorrowAt(picker, "Senast framme", hour);
       await picker.getByRole("button", { name: "Klar" }).click();
       await expect(picker).toBeHidden();
     };
@@ -972,7 +985,7 @@ test.describe("the commute screen", () => {
     const picker = page.getByRole("dialog", { name: "Välj tid" });
     await timePill(page).click();
     await picker.getByRole("button", { name: "Framme senast" }).click();
-    await picker.getByLabel("Senast framme").fill(localTomorrowAt(9, 0));
+    await pickTomorrowAt(picker, "Senast framme", 9);
     await picker.getByRole("button", { name: "Klar" }).click();
     await expect(picker).toBeHidden();
     await expect(timePill(page)).toHaveText("Framme imorgon 09:00");
