@@ -36,10 +36,10 @@ const MATRIX_CHUNK = 100;
 /**
  * Cap on candidates that get a route of their own, nearest by street first.
  *
- * The matrix is one request for everything; a route is one request per ten, and each
+ * The matrix is one request for everything; a route is one request per five, and each
  * request costs a second of the routing queue's spacing. A plan enumerates the twelve
  * nearest sites and reads one stop per site and mode, so the fortieth nearest stop area
- * is the last one any answer could be built from. Routing all hundred spent six more
+ * is the last one any answer could be built from. Routing all hundred spent twelve more
  * requests on stops no plan ever read.
  */
 const MAX_ROUTED = 40;
