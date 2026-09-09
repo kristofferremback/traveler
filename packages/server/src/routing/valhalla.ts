@@ -141,20 +141,23 @@ export type WalkRoute = {
 
 /** Elevation sample spacing in metres. 30 m resolves a stairway without bloating the payload. */
 const ELEVATION_INTERVAL_M = 30;
+/** Locations per `/route` request on the public instance. Probed 2026-09-09: 10 pass, 11 are refused. */
+export const MAX_ROUTE_LOCATIONS = 10;
 
 /**
  * One street route per (from, to) pair. Pairs are packed into as few requests as the
  * server allows by chaining them as legs of one trip: A→B, C→D, ... become the legs of
  * the location list [A, B, C, D, ...]; the legs between pairs (B→C) are discarded.
  *
- * Public Valhalla caps a route at 20 locations, so 10 pairs per request.
+ * The public instance rejects a route with more than `MAX_ROUTE_LOCATIONS` locations
+ * (error 150, "Exceeded max locations"), so five pairs per request.
  */
 export async function walkRoutes(
   pairs: { from: LatLon; to: LatLon }[],
   speedKmh: number,
 ): Promise<WalkRoute[]> {
   const out: WalkRoute[] = [];
-  const PER_REQUEST = 10;
+  const PER_REQUEST = MAX_ROUTE_LOCATIONS / 2;
   for (let i = 0; i < pairs.length; i += PER_REQUEST) {
     const chunk = pairs.slice(i, i + PER_REQUEST);
     const locations = chunk.flatMap((p) => [
