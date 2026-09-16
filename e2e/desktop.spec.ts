@@ -117,7 +117,7 @@ test.describe("the commute panel", () => {
     expect(button.y + button.height).toBeLessThan(450);
   });
 
-  test("lists the trips in the panel, scrolling inside it, and opens one in place", async ({ page }) => {
+  test("lists the trips in the panel, scrolling inside it, and opens one", async ({ page }) => {
     await page.goto(trip);
     await panel(page).getByRole("button", { name: "Sök resor" }).click();
     await expect(rows(page).nth(1)).toBeVisible({ timeout: 120_000 });
@@ -138,6 +138,85 @@ test.describe("the commute panel", () => {
     await page.goBack();
     await expect(panel(page).locator('[aria-current="true"]')).toHaveCount(1);
     await expect(panel(page).locator('[aria-current="true"] > span').last()).toHaveText(arrival);
+  });
+
+  test("opens a trip in a column beside the list, and swaps it rather than stacking Back steps", async ({ page }) => {
+    await page.goto(trip);
+    await panel(page).getByRole("button", { name: "Sök resor" }).click();
+    await expect(rows(page).nth(2)).toBeVisible({ timeout: 120_000 });
+
+    await rows(page).nth(1).getByRole("button").first().click();
+    const opened = page.getByRole("region", { name: "Vald resa" });
+    await expect(opened.locator("li").first()).toBeVisible();
+    // Beside the panel, not in it: the rows and the paging stay where they were.
+    const box = (await opened.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(76 + 12 + 408 + 12);
+    await expect(panel(page).getByRole("button", { name: "Senare" })).toBeVisible();
+    await expect(opened.getByRole("button", { name: "Tillbaka till listan" })).toHaveCount(0);
+
+    // Another row replaces the trip in the column, so one Back closes it.
+    const before = await opened.textContent();
+    await rows(page).nth(2).getByRole("button").first().click();
+    await expect(rows(page).nth(2).getByRole("button")).toHaveAttribute("aria-current", "true");
+    await expect(opened).not.toHaveText(before!);
+    await page.goBack();
+    await expect(opened).toHaveCount(0);
+    await expect(page).toHaveURL(trip);
+
+    await rows(page).nth(1).getByRole("button").first().click();
+    await opened.getByRole("button", { name: "Stäng resan" }).click();
+    await expect(opened).toHaveCount(0);
+    await expect(rows(page).nth(1).getByRole("button")).toHaveAttribute("aria-current", "true");
+  });
+
+  test("keeps the trip in place of the list below 1280 px, where a column would crowd the map", async ({ page }) => {
+    await page.setViewportSize({ width: 1180, height: 900 });
+    await page.goto(trip);
+    await panel(page).getByRole("button", { name: "Sök resor" }).click();
+    await expect(rows(page).nth(1)).toBeVisible({ timeout: 120_000 });
+    await rows(page).nth(1).getByRole("button").first().click();
+    const opened = panel(page).getByRole("region", { name: "Vald resa" });
+    await expect(opened.getByRole("button", { name: "Tillbaka till listan" })).toBeVisible();
+    await expect(rows(page)).toHaveCount(0);
+  });
+
+  test("answers the keyboard: / to search, arrows and Enter through the trips, Escape and R", async ({ page }) => {
+    await page.goto(trip);
+    await expect(panel(page)).toContainText("Inget sökt än");
+
+    await page.keyboard.press("/");
+    const search = page.getByRole("dialog", { name: "Vart ska du?" });
+    await expect(search).toBeVisible();
+    // Typing into the search is typing, not shortcuts.
+    await page.keyboard.type("r/");
+    await expect(search.getByRole("combobox")).toHaveValue("r/");
+    await page.keyboard.press("Escape");
+    await expect(search).toHaveCount(0);
+
+    const asked = page.waitForRequest(/\/api\/commute/, { timeout: 60_000 });
+    await page.keyboard.press("r");
+    await asked;
+    await expect(rows(page).nth(2)).toBeVisible({ timeout: 120_000 });
+
+    // From a clicked row too: Enter opens the row the arrows moved to, not the clicked one.
+    await rows(page).first().getByRole("button").first().click();
+    await page.goBack();
+    await page.keyboard.press("ArrowDown");
+    await expect(rows(page).nth(1).getByRole("button")).toHaveAttribute("aria-current", "true");
+    await expect(rows(page).nth(1).getByRole("button")).toBeFocused();
+    await page.keyboard.press("Enter");
+    const opened = page.getByRole("region", { name: "Vald resa" });
+    await expect(opened).toBeVisible();
+
+    // The open trip follows the selection.
+    const before = await opened.textContent();
+    await page.keyboard.press("ArrowDown");
+    await expect(rows(page).nth(2).getByRole("button")).toHaveAttribute("aria-current", "true");
+    await expect(opened).not.toHaveText(before!);
+
+    await page.keyboard.press("Escape");
+    await expect(opened).toHaveCount(0);
+    await expect(page).toHaveURL(trip);
   });
 
   test("keeps the map's zoom and licence in its own corners", async ({ page }) => {

@@ -5,7 +5,7 @@ import type { CommuteOption, SavedPlace } from "@traveler/shared";
 import { api, ApiError } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import { useOverlay } from "@/lib/overlay";
-import { useDesktop } from "@/hooks/useDesktop";
+import { useDesktop, useWide } from "@/hooks/useDesktop";
 import { accumulate, type Answered } from "@/lib/trips";
 import { parseModes } from "@/lib/modes";
 import { BottomSheet, PEEK_HEIGHT } from "@/components/BottomSheet";
@@ -43,6 +43,8 @@ const CONTROLS_CLEARANCE = 8;
 /** The desktop panel's width and its gap from the rail, which together cover the map's left. */
 const PANEL_WIDTH = 408;
 const PANEL_GAP = 12;
+/** The opened trip's column on a wide screen, beside the panel with the same gap. */
+const COLUMN_WIDTH = 392;
 
 type Position = { lat: number; lon: number };
 
@@ -81,6 +83,7 @@ export function CommutePage() {
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const desktop = useDesktop();
+  const wide = useWide();
   const navigate = useNavigate();
 
   const savedPlaces = useQuery({
@@ -334,10 +337,27 @@ export function CommutePage() {
    */
   const openedId = overlay?.startsWith("trip:") ? overlay.slice("trip:".length) : null;
   const opened = openedId ? (picks.get(openedId) ?? options.find((o) => o.id === openedId) ?? null) : null;
+  /**
+   * On a wide screen the trip opens in a column beside the list, which stays put, so
+   * the next row is one click away. Opening it then swaps the trip in the column rather
+   * than stacking one history entry per row looked at: Back closes the column.
+   */
+  const beside = wide && opened !== null;
   const openTrip = (option: CommuteOption) => {
     select(option);
-    openOverlay(`trip:${option.id}`);
+    // Below 1280 px the row goes away under the pointer, and a leave never comes.
+    setHovered(null);
+    if (beside) {
+      navigate(
+        { pathname: location.pathname, search: location.search },
+        { replace: true, state: { overlay: `trip:${option.id}` } },
+      );
+    } else {
+      openOverlay(`trip:${option.id}`);
+    }
   };
+  /** A mouse over a row draws that trip faintly on the map, without moving the camera. */
+  const [hovered, setHovered] = useState<CommuteOption | null>(null);
   /** A branch replaces the trip it was opened from, in place, and is drawn at once. */
   const pickBranch = (option: CommuteOption) => {
     setPicks((prev) => new Map(prev).set(option.id, option));
@@ -409,6 +429,61 @@ export function CommutePage() {
     });
   };
 
+  /**
+   * The keyboard, on a desktop: / to choose where to, arrows through the trips, Enter to
+   * open one, Escape to close it, R for Uppdatera.
+   *
+   * Never while typing, never with a modifier (the browser's own shortcuts stay the
+   * browser's), and never under an open picker, which has keys of its own. Enter on a
+   * focused control is that control's.
+   */
+  const onKey = useRef<(event: KeyboardEvent) => void>(() => {});
+  onKey.current = (event) => {
+    if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (document.querySelector("dialog[open]")) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("input, textarea, select, [contenteditable]")) return;
+
+    if (event.key === "/") {
+      event.preventDefault();
+      openPicker("to");
+    } else if (event.key === "r" || event.key === "R") {
+      if (commute.isFetching) return;
+      if (armed) void commute.refetch();
+      else setArmed(true);
+    } else if (event.key === "Escape" && openedId) {
+      closeOverlay();
+    } else if (event.key === "Enter" && !opened && selected) {
+      if (target?.closest("button, a")) return;
+      event.preventDefault();
+      openTrip(selected);
+    } else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && options.length > 0) {
+      event.preventDefault();
+      const at = options.findIndex((o) => o.id === selected?.id);
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      const next = options[Math.min(options.length - 1, Math.max(0, at + step))]!;
+      select(next);
+      // An open trip follows the selection, in place, rather than becoming one Back step per row.
+      if (opened) {
+        navigate(
+          { pathname: location.pathname, search: location.search },
+          { replace: true, state: { overlay: `trip:${next.id}` } },
+        );
+      }
+      // Focus goes with it, which scrolls the row into view and makes Enter open this
+      // row rather than whichever one was clicked last.
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLElement>('[aria-label="Resor"] [aria-current="true"]')?.focus(),
+      );
+    }
+  };
+  useEffect(() => {
+    if (!desktop) return;
+    const listener = (event: KeyboardEvent) => onKey.current(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, [desktop]);
+
   const fromLabel = useRefLabel(fromRef, saved, positionDenied);
   const toLabel = useRefLabel(toRef, saved, positionDenied);
   /** The destination as the API takes it, for branches. Null until a fix exists, if one is needed. */
@@ -446,6 +521,7 @@ export function CommutePage() {
             onClick={() => (armed ? commute.refetch() : setArmed(true))}
             disabled={commute.isFetching}
             aria-label="Uppdatera"
+            aria-keyshortcuts={desktop ? "R" : undefined}
           >
             <RefreshCw className={cn(commute.isFetching && "animate-spin")} />
           </Button>
@@ -507,7 +583,7 @@ export function CommutePage() {
 
       {/* Paging reads down the clock: earlier trips join at the top, later at the
           bottom, so each button sits where its answer will appear. */}
-      {commute.isSuccess && !opened && !time?.arriveBy && options.length > 0 ? (
+      {commute.isSuccess && (!opened || beside) && !time?.arriveBy && options.length > 0 ? (
         <Button
           type="button"
           variant="outline"
@@ -520,7 +596,7 @@ export function CommutePage() {
         </Button>
       ) : null}
 
-      {opened && toApi ? (
+      {opened && toApi && !beside ? (
         <TripView
           option={opened}
           destinationName={commute.data?.toLabel ?? commute.data?.to?.name ?? toLabel}
@@ -530,7 +606,13 @@ export function CommutePage() {
           onPick={pickBranch}
         />
       ) : options.length > 0 ? (
-        <CommuteRows options={options} selectedId={selected?.id ?? null} now={now} onOpen={openTrip} />
+        <CommuteRows
+          options={options}
+          selectedId={selected?.id ?? null}
+          now={now}
+          onOpen={openTrip}
+          onHover={setHovered}
+        />
       ) : null}
 
       {commute.isSuccess && options.length === 0 ? (
@@ -543,7 +625,7 @@ export function CommutePage() {
         </p>
       ) : null}
 
-      {commute.isSuccess && !opened && !time?.arriveBy ? (
+      {commute.isSuccess && (!opened || beside) && !time?.arriveBy ? (
         <div className="flex gap-2">
           {/* With no rows there is no top for Tidigare to sit above, so the two
               directions share the one line. */}
@@ -597,9 +679,10 @@ export function CommutePage() {
         <TransitMap
           option={selected}
           vehicleTrip={vehicleTrip}
+          preview={desktop && hovered && options.includes(hovered) ? hovered : null}
           topInset={desktop ? 48 : controlsHeight + CONTROLS_CLEARANCE}
           bottomInset={desktop ? 0 : sheetHeight}
-          leftInset={desktop ? PANEL_GAP + PANEL_WIDTH : 0}
+          leftInset={desktop ? PANEL_GAP + PANEL_WIDTH + (beside ? PANEL_GAP + COLUMN_WIDTH : 0) : 0}
           className="commute-map relative size-full"
         />
       </Suspense>
@@ -639,6 +722,26 @@ export function CommutePage() {
         </>
       )}
 
+      {beside && toApi ? (
+        /* Its own card, as tall as the trip up to the screen's height, beside the panel. */
+        <div
+          className="pointer-events-none absolute top-3 bottom-3 z-20 flex flex-col"
+          style={{ left: PANEL_GAP * 2 + PANEL_WIDTH, width: COLUMN_WIDTH }}
+        >
+          <div className="pointer-events-auto max-h-full overflow-y-auto rounded-[var(--radius-sheet)] bg-[var(--color-surface)]/92 p-3 pl-4 shadow-[var(--shadow-float)] backdrop-blur-xl">
+            <TripView
+              option={opened}
+              destinationName={commute.data?.toLabel ?? commute.data?.to?.name ?? toLabel}
+              to={toApi}
+              now={now}
+              onBack={closeOverlay}
+              onPick={pickBranch}
+              beside
+            />
+          </div>
+        </div>
+      ) : null}
+
       {picker === "time" ? (
         <TimePicker time={time} onPick={setTime} onClose={closePicker} />
       ) : null}
@@ -651,6 +754,8 @@ export function CommutePage() {
         <PlaceSearch
           title={picker === "from" ? "Var börjar du?" : "Vart ska du?"}
           anchor="ends"
+          /* A desktop has a keyboard out already, and / opens this to be typed into. */
+          focusField={desktop}
           saved={saved}
           /* Live: the screen plans from wherever the phone is when it searches, not
              from the address it was standing at when the place was chosen. */

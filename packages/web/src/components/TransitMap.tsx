@@ -35,6 +35,7 @@ const RING_SOURCE = "hood-rings";
 const WALK_SOURCE = "hood-walks";
 const HOOD_STOP_SOURCE = "hood-stops";
 const OUR_WALK_SOURCE = "our-walk";
+const PREVIEW_SOURCE = "preview-route";
 
 type Theme = "dark" | "light";
 
@@ -94,6 +95,38 @@ function routeGeoJSON(journey: Journey | null): FeatureCollection {
         },
       })),
   };
+}
+
+/**
+ * A trip under the pointer, as one faint line per ride.
+ *
+ * Only the recommended trip comes with its drawn path, so a ride without one is a
+ * straight line from where it is boarded to where it is left: enough to see which way a
+ * row goes before choosing it, and never mistaken for the chosen route.
+ */
+function previewGeoJSON(option: CommuteOption | null): FeatureCollection {
+  if (!option) return { type: "FeatureCollection", features: [] };
+  const features: Feature[] = [];
+  for (const leg of option.journey.legs) {
+    if (leg.mode === "WALK") continue;
+    const { origin: from, destination: to } = leg;
+    const coordinates =
+      leg.path.length > 1
+        ? leg.path
+        : from.lat !== null && from.lon !== null && to.lat !== null && to.lon !== null
+          ? [
+              [from.lon, from.lat],
+              [to.lon, to.lat],
+            ]
+          : null;
+    if (!coordinates) continue;
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates },
+      properties: { color: modeColor(leg.mode, leg.line?.designation) },
+    });
+  }
+  return { type: "FeatureCollection", features };
 }
 
 function stopsGeoJSON(journey: Journey | null): FeatureCollection {
@@ -409,6 +442,7 @@ export function TransitMap({
   neighbourhood,
   showVehicles = false,
   vehicleTrip = null,
+  preview = null,
   topInset = 120,
   bottomInset = 0,
   leftInset = 0,
@@ -428,6 +462,11 @@ export function TransitMap({
    * not need a notice for that.
    */
   vehicleTrip?: VehicleTrip | null;
+  /**
+   * A trip the pointer is over, drawn faintly under the chosen one. The camera does not
+   * move for it: a list swept with a mouse would otherwise swing the map at every row.
+   */
+  preview?: CommuteOption | null;
   /**
    * Pixels at the top covered by the app's own floating controls, used as camera padding
    * for the same reason as `bottomInset`. It is the caller's measurement rather than a
@@ -635,7 +674,9 @@ export function TransitMap({
     return () => {
       instance.off("moveend", render);
     };
-  }, [drawn, option, ready]);
+    // The left inset too: the trip column opening or closing beside the panel changes how
+    // much map is left to frame the trip in.
+  }, [drawn, option, ready, leftInset]);
 
   useEffect(() => {
     const instance = map.current;
@@ -702,6 +743,14 @@ export function TransitMap({
 
     return detach;
   }, [neighbourhood, ready]);
+
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready) return;
+    (instance.getSource(PREVIEW_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      previewGeoJSON(preview && preview.id !== option?.id ? preview : null),
+    );
+  }, [preview, option, ready]);
 
   const wantsVehicles = showVehicles || vehicleTrip !== null;
 
@@ -864,6 +913,15 @@ function addSourcesAndLayers(instance: MapLibreMap) {
       "circle-stroke-color": "#ffffff",
       "circle-stroke-width": 1.5,
     },
+  });
+
+  instance.addSource(PREVIEW_SOURCE, { type: "geojson", data: previewGeoJSON(null) });
+  instance.addLayer({
+    id: "preview-line",
+    type: "line",
+    source: PREVIEW_SOURCE,
+    paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": 0.45 },
+    layout: { "line-cap": "round", "line-join": "round" },
   });
 
   instance.addSource(ROUTE_SOURCE, { type: "geojson", data: routeGeoJSON(null) });

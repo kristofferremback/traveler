@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { CommuteOption, JourneyLeg } from "@traveler/shared";
-import { ChevronLeft, Footprints, GitBranch } from "lucide-react";
+import { ChevronLeft, Footprints, GitBranch, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { dayLabel, formatDuration, formatTime } from "@/lib/format";
 import { modeColor } from "@/lib/modes";
@@ -185,6 +185,7 @@ export function TripView({
   now,
   onBack,
   onPick,
+  beside = false,
 }: {
   option: CommuteOption;
   /** What the far end is called on the last row. */
@@ -194,6 +195,11 @@ export function TripView({
   now: number;
   onBack: () => void;
   onPick: (option: CommuteOption) => void;
+  /**
+   * Shown in a column beside the list rather than in its place, so closing it goes
+   * nowhere: the list never left, and the button says so with a cross instead of a back arrow.
+   */
+  beside?: boolean;
 }) {
   const [openLeg, setOpenLeg] = useState<number | null>(null);
   const legs = option.journey.legs;
@@ -205,8 +211,15 @@ export function TripView({
   return (
     <section aria-label="Vald resa">
       <div className="flex items-start gap-2">
-        <Button type="button" variant="ghost" size="icon" onClick={onBack} aria-label="Tillbaka till listan" className="-ml-2 shrink-0">
-          <ChevronLeft />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onBack}
+          aria-label={beside ? "Stäng resan" : "Tillbaka till listan"}
+          className="-ml-2 shrink-0"
+        >
+          {beside ? <X /> : <ChevronLeft />}
         </Button>
         <div className="min-w-0">
           <p className="flex flex-wrap items-baseline gap-x-2">

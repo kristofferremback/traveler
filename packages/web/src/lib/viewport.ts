@@ -16,6 +16,12 @@
  */
 export const DESKTOP_QUERY = "(width >= 64rem)";
 
+/**
+ * Wide enough for an opened trip to sit in a column of its own beside the list, rather
+ * than in place of it: rail, panel, column and still 500 px of map.
+ */
+export const WIDE_QUERY = "(width >= 80rem)";
+
 /** Above this, the visible area is small because of pinch zoom, not because of the browser. */
 const ZOOMED = 1.01;
 
