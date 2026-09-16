@@ -12,6 +12,7 @@ import { streams } from "@/lib/api";
 import { useStream } from "@/hooks/useStream";
 import { modeColor } from "@/lib/modes";
 import { formatTime } from "@/lib/format";
+import { hoodStopKey } from "@/lib/savedPlaces";
 import { cn } from "@/lib/utils";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -211,7 +212,7 @@ function walksGeoJSON(hood: Neighbourhood | null): FeatureCollection {
       .map((stop) => ({
         type: "Feature" as const,
         geometry: { type: "LineString" as const, coordinates: stop.path },
-        properties: { name: stop.name },
+        properties: { name: stop.name, key: hoodStopKey(stop) },
       })),
   };
 }
@@ -223,7 +224,7 @@ function hoodStopsGeoJSON(hood: Neighbourhood | null): FeatureCollection {
     features: hood.stops.map((stop) => ({
       type: "Feature" as const,
       geometry: { type: "Point" as const, coordinates: [stop.lon, stop.lat] },
-      properties: { color: modeColor(stop.mode), name: stop.name },
+      properties: { color: modeColor(stop.mode), name: stop.name, key: hoodStopKey(stop) },
     })),
   };
 }
@@ -254,6 +255,31 @@ function minuteLabel(seconds: number): HTMLElement {
   el.className =
     "pointer-events-none rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/90 px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-fg)]";
   el.textContent = `${Math.max(1, Math.round(seconds / 60))} min`;
+  return el;
+}
+
+/**
+ * A place on a list, shown where it is: a dot in the mode's colour, and its name beside
+ * it while its row is under the pointer. Not a control: the row is, at a size a finger
+ * can hit, and a second way in the size of a dot would only be a worse one.
+ */
+function pinElement(pin: MapPin, highlighted: boolean): HTMLElement {
+  const el = document.createElement("span");
+  el.setAttribute("aria-hidden", "true");
+  el.className = cn(
+    "flex items-center gap-1.5 rounded-full",
+    highlighted
+      ? "z-10 bg-[var(--color-surface)] py-1 pr-2.5 pl-1 text-xs font-semibold text-[var(--color-fg)] shadow-[var(--shadow-float)]"
+      : "p-1",
+  );
+  const dot = document.createElement("span");
+  dot.className = cn(
+    "block shrink-0 rounded-full border-2 border-white shadow-[0_1px_3px_rgba(0,0,0,0.4)]",
+    highlighted ? "size-4" : "size-3",
+  );
+  dot.style.backgroundColor = pin.color ?? "var(--color-accent)";
+  el.append(dot);
+  if (highlighted) el.append(pin.label);
   return el;
 }
 
@@ -436,6 +462,9 @@ function doorsOf(option: CommuteOption | null): {
   };
 }
 
+/** One thing from a list beside the map, placed on it. */
+export type MapPin = { id: string; lat: number; lon: number; label: string; color?: string };
+
 export function TransitMap({
   journey,
   option,
@@ -443,6 +472,9 @@ export function TransitMap({
   showVehicles = false,
   vehicleTrip = null,
   preview = null,
+  pins,
+  here = null,
+  highlight = null,
   topInset = 120,
   bottomInset = 0,
   leftInset = 0,
@@ -467,6 +499,15 @@ export function TransitMap({
    * move for it: a list swept with a mouse would otherwise swing the map at every row.
    */
   preview?: CommuteOption | null;
+  /** The rows of a list beside the map, as dots. The camera fits them when the list changes. */
+  pins?: MapPin[];
+  /** Where the traveller is, drawn with the pins and fitted with them. */
+  here?: { lat: number; lon: number } | null;
+  /**
+   * The id of the row under the pointer: a pin's id, or a neighbourhood stop's key, whose
+   * walk is then drawn solid. Nothing refits for it.
+   */
+  highlight?: string | null;
   /**
    * Pixels at the top covered by the app's own floating controls, used as camera padding
    * for the same reason as `bottomInset`. It is the caller's measurement rather than a
@@ -492,6 +533,7 @@ export function TransitMap({
   const doorMarkers = useRef<maplibregl.Marker[]>([]);
   const calloutMarkers = useRef<maplibregl.Marker[]>([]);
   const vehicleMarkers = useRef<maplibregl.Marker[]>([]);
+  const pinMarkers = useRef<maplibregl.Marker[]>([]);
   const [ready, setReady] = useState(false);
   const [bbox, setBbox] = useState<string | null>(null);
   const [styleError, setStyleError] = useState(false);
@@ -744,6 +786,47 @@ export function TransitMap({
     return detach;
   }, [neighbourhood, ready]);
 
+  // The pins are redrawn when the highlight moves, which is cheap: tens of DOM markers.
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready) return;
+    for (const marker of pinMarkers.current) marker.remove();
+    pinMarkers.current = [];
+    if (here) {
+      pinMarkers.current.push(
+        new maplibregl.Marker({ element: placeMarker() }).setLngLat([here.lon, here.lat]).addTo(instance),
+      );
+    }
+    for (const pin of pins ?? []) {
+      const lit = pin.id === highlight;
+      const element = pinElement(pin, lit);
+      pinMarkers.current.push(
+        new maplibregl.Marker({ element, anchor: lit ? "left" : "center", offset: lit ? [-12, 0] : [0, 0] })
+          .setLngLat([pin.lon, pin.lat])
+          .addTo(instance),
+      );
+    }
+    for (const layer of ["hood-walk-lit", "hood-stop-lit"]) {
+      if (instance.getLayer(layer)) instance.setFilter(layer, ["==", ["get", "key"], highlight ?? ""]);
+    }
+  }, [pins, here, highlight, ready]);
+
+  const pinIds = pins?.map((p) => p.id).join(",");
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready || !pins) return;
+    const bounds = new maplibregl.LngLatBounds();
+    for (const pin of pins) bounds.extend([pin.lon, pin.lat]);
+    if (here) bounds.extend([here.lon, here.lat]);
+    if (bounds.isEmpty()) return;
+    instance.fitBounds(bounds, {
+      padding: { top: 60, bottom: 40 + insetRef.current, left: 60 + leftRef.current, right: 60 },
+      maxZoom: 16,
+      animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    });
+    // Fitted when the list is a different list, not when the same rows re-render.
+  }, [pinIds, here?.lat, here?.lon, ready]);
+
   useEffect(() => {
     const instance = map.current;
     if (!instance || !ready) return;
@@ -847,7 +930,7 @@ export function TransitMap({
         ref={container}
         className="size-full"
         role="application"
-        aria-label={neighbourhood ? "Karta över hållplatser i närheten" : "Karta över resan"}
+        aria-label={neighbourhood ? "Karta över hållplatser i närheten" : pins ? "Karta" : "Karta över resan"}
       />
       {styleError ? (
         <p className="absolute inset-x-3 top-3 rounded-lg bg-[var(--color-surface)]/95 p-2 text-xs text-[var(--color-muted)]">
@@ -903,6 +986,16 @@ function addSourcesAndLayers(instance: MapLibreMap) {
     },
     layout: { "line-cap": "round", "line-join": "round" },
   });
+  // The walk to the stop under the pointer, solid over the dashed ones. The filter is set
+  // by the highlight; nothing matches until then.
+  instance.addLayer({
+    id: "hood-walk-lit",
+    type: "line",
+    source: WALK_SOURCE,
+    filter: ["==", ["get", "key"], ""],
+    paint: { "line-color": "#4c9be8", "line-width": 5 },
+    layout: { "line-cap": "round", "line-join": "round" },
+  });
   instance.addLayer({
     id: "hood-stop-dots",
     type: "circle",
@@ -912,6 +1005,18 @@ function addSourcesAndLayers(instance: MapLibreMap) {
       "circle-color": ["get", "color"],
       "circle-stroke-color": "#ffffff",
       "circle-stroke-width": 1.5,
+    },
+  });
+  instance.addLayer({
+    id: "hood-stop-lit",
+    type: "circle",
+    source: HOOD_STOP_SOURCE,
+    filter: ["==", ["get", "key"], ""],
+    paint: {
+      "circle-radius": 8,
+      "circle-color": ["get", "color"],
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 2.5,
     },
   });
 

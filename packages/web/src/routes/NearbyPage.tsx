@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { LocateFixed, Loader2 } from "lucide-react";
@@ -8,6 +8,14 @@ import { ModeChips } from "@/components/LineBadge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MapPanel, PANEL_GAP, PANEL_WIDTH } from "@/components/MapPanel";
+import { useDesktop } from "@/hooks/useDesktop";
+import { modeColor } from "@/lib/modes";
+
+/** Only on a desktop, where the stops are shown where they are. The phone keeps the list. */
+const TransitMap = lazy(() =>
+  import("@/components/TransitMap").then((m) => ({ default: m.TransitMap })),
+);
 
 type Position = { lat: number; lon: number };
 
@@ -18,6 +26,9 @@ const RADIUS_M = 1200;
 const round = (n: number) => n.toFixed(4);
 
 export function NearbyPage() {
+  const desktop = useDesktop();
+  /** The row under a mouse pointer, whose stop is named on the map. */
+  const [hovered, setHovered] = useState<string | null>(null);
   const [position, setPosition] = useState<Position | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -61,8 +72,20 @@ export function NearbyPage() {
     staleTime: 60_000,
   });
 
-  return (
-    <div className="mx-auto w-full max-w-2xl px-4 pb-24 lg:pb-8">
+  const pins = useMemo(
+    () =>
+      stops.data?.places.map((place) => ({
+        id: String(place.siteId),
+        lat: place.lat,
+        lon: place.lon,
+        label: place.name,
+        color: place.modes[0] ? modeColor(place.modes[0]) : undefined,
+      })),
+    [stops.data],
+  );
+
+  const content = (
+    <>
       <header className="flex items-center justify-between gap-2 pb-3 pt-3 safe-top">
         <h1 className="text-lg font-semibold">Nära dig</h1>
         <Button variant="outline" size="sm" onClick={locate} disabled={locating}>
@@ -99,6 +122,8 @@ export function NearbyPage() {
             <Card>
               <Link
                 to={`/stop/${place.siteId}`}
+                onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(String(place.siteId))}
+                onPointerLeave={(e) => e.pointerType === "mouse" && setHovered(null)}
                 className="flex min-h-16 items-center gap-3 p-4"
               >
                 <span className="min-w-0 flex-1">
@@ -118,6 +143,27 @@ export function NearbyPage() {
           </li>
         ))}
       </ul>
-    </div>
+    </>
   );
+
+  if (desktop) {
+    return (
+      <MapPanel
+        label="Hållplatser nära dig"
+        map={
+          <TransitMap
+            pins={pins ?? []}
+            here={position}
+            highlight={hovered}
+            leftInset={PANEL_GAP + PANEL_WIDTH}
+            className="relative size-full"
+          />
+        }
+      >
+        <div className="px-4 pb-4">{content}</div>
+      </MapPanel>
+    );
+  }
+
+  return <div className="mx-auto w-full max-w-2xl px-4 pb-24">{content}</div>;
 }

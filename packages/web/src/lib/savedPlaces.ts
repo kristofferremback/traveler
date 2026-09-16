@@ -22,3 +22,8 @@ export const KIND_LABEL: Record<SavedPlaceKind, string> = {
   poi: "Plats",
   coordinate: "Koordinat",
 };
+
+/** A neighbourhood stop's identity: one stop point can be walked to for more than one mode. */
+export function hoodStopKey(stop: { stopPointId: number | string; mode: string }): string {
+  return `${stop.stopPointId}:${stop.mode}`;
+}

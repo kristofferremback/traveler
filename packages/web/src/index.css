@@ -118,7 +118,9 @@
   top: calc(var(--map-top, 7.75rem) + 0.5rem);
 }
 
-.commute-map .maplibregl-ctrl-group button {
+/* The same thumb-sized zoom for the maps a desktop list floats over. */
+.commute-map .maplibregl-ctrl-group button,
+.map-panel .maplibregl-ctrl-group button {
   width: 44px;
   height: 44px;
 }

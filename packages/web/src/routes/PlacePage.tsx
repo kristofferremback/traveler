@@ -4,8 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { formatDistance } from "@/lib/format";
-import { KIND_ICON, KIND_LABEL } from "@/lib/savedPlaces";
+import { KIND_ICON, KIND_LABEL, hoodStopKey } from "@/lib/savedPlaces";
 import { LineBadge } from "@/components/LineBadge";
+import { MapPanel, PANEL_GAP, PANEL_WIDTH } from "@/components/MapPanel";
+import { useDesktop } from "@/hooks/useDesktop";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,6 +31,9 @@ export function PlacePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const id = Number(params.id);
+  const desktop = useDesktop();
+  /** The stop under a mouse pointer, whose walk is drawn solid on the map. */
+  const [hovered, setHovered] = useState<string | null>(null);
 
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState("");
@@ -87,8 +92,17 @@ export function PlacePage() {
     rename.mutate(next);
   }
 
-  return (
-    <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24 lg:pb-8">
+  const map = (
+    <TransitMap
+      neighbourhood={hood.data ?? null}
+      highlight={hovered}
+      leftInset={desktop ? PANEL_GAP + PANEL_WIDTH : 0}
+      className="relative size-full"
+    />
+  );
+
+  const content = (
+    <>
       <header className="flex items-center gap-1 pb-1 pt-3 safe-top">
         <Button asChild variant="ghost" size="icon">
           <Link to="/places" aria-label="Tillbaka till platser">
@@ -188,14 +202,11 @@ export function PlacePage() {
             </p>
           ) : null}
 
-          <div className="relative h-64 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)]">
-            <Suspense fallback={<Skeleton className="size-full rounded-none" />}>
-              <TransitMap
-                neighbourhood={hood.data ?? null}
-                className="relative size-full"
-              />
-            </Suspense>
-          </div>
+          {desktop ? null : (
+            <div className="relative h-64 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)]">
+              <Suspense fallback={<Skeleton className="size-full rounded-none" />}>{map}</Suspense>
+            </div>
+          )}
 
           <section className="space-y-2">
             <h2 className="text-sm font-semibold">Hållplatser att gå till</h2>
@@ -232,7 +243,9 @@ export function PlacePage() {
             <ul className="divide-y divide-[var(--color-border)]">
               {stops.map((stop) => (
                 <li
-                  key={`${stop.stopPointId}:${stop.mode}`}
+                  key={hoodStopKey(stop)}
+                  onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(hoodStopKey(stop))}
+                  onPointerLeave={(e) => e.pointerType === "mouse" && setHovered(null)}
                   className="flex min-h-12 items-center gap-3 py-2"
                 >
                   <LineBadge mode={stop.mode} />
@@ -251,6 +264,16 @@ export function PlacePage() {
           </section>
         </>
       ) : null}
-    </div>
+    </>
   );
+
+  if (desktop) {
+    return (
+      <MapPanel label={saved?.label ?? "Plats"} map={map}>
+        <div className="space-y-4 px-4 pb-4">{content}</div>
+      </MapPanel>
+    );
+  }
+
+  return <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24">{content}</div>;
 }

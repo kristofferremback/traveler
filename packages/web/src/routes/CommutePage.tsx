@@ -15,6 +15,7 @@ import { PlaceSearch, type PlaceChoice } from "@/components/PlaceSearch";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
 import { ModePicker, ModePill } from "@/components/ModePicker";
 import { TripControl } from "@/components/TripControl";
+import { PANEL_GAP, PANEL_WIDTH } from "@/components/MapPanel";
 import type { VehicleTrip } from "@/components/TransitMap";
 import { Button } from "@/components/ui/button";
 import { ClockArrowDown, History, RefreshCw, Search } from "lucide-react";
@@ -40,9 +41,6 @@ const EARLIER_MS = 10 * 60_000;
 const CONTROLS_HEIGHT = 124;
 /** Map left between the controls and anything below them. */
 const CONTROLS_CLEARANCE = 8;
-/** The desktop panel's width and its gap from the rail, which together cover the map's left. */
-const PANEL_WIDTH = 408;
-const PANEL_GAP = 12;
 /** The opened trip's column on a wide screen, beside the panel with the same gap. */
 const COLUMN_WIDTH = 392;
 
@@ -693,7 +691,8 @@ export function CommutePage() {
            as tall as what it holds, up to the height of the screen, and scrolls inside. */
         <section
           aria-label="Resor härifrån"
-          className="pointer-events-none absolute top-3 bottom-3 left-3 z-20 flex w-[408px] flex-col"
+          className="pointer-events-none absolute top-3 bottom-3 left-3 z-20 flex flex-col"
+          style={{ width: PANEL_WIDTH }}
         >
           <div className="pointer-events-auto flex max-h-full flex-col rounded-[var(--radius-sheet)] bg-[var(--color-surface)]/92 shadow-[var(--shadow-float)] backdrop-blur-xl">
             <div className="shrink-0 p-3 pb-2">{tripControl}</div>

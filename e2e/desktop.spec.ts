@@ -335,3 +335,50 @@ test.describe("planning any trip", () => {
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
   });
 });
+
+test.describe("lists with a place", () => {
+  const SLUSSEN = "9091001000009192";
+  const markerNamed = (page: Page, name: string | RegExp) =>
+    page.locator(".maplibregl-marker").filter({ hasText: name });
+
+  test("Nära shows the stops on a map beside the list, and names the one under the pointer", async ({ page, context }) => {
+    await context.grantPermissions(["geolocation"]);
+    await context.setGeolocation({ latitude: 59.3195, longitude: 18.0717 });
+    await page.goto("/nearby");
+    const list = page.getByRole("region", { name: "Hållplatser nära dig" });
+    const first = list.getByRole("link").first();
+    await expect(first).toBeVisible({ timeout: 30_000 });
+    expect((await list.boundingBox())!.x).toBe(88);
+    await expect(page.getByRole("application", { name: "Karta" })).toBeVisible();
+    // You, and a dot for every stop.
+    await expect.poll(() => page.locator(".maplibregl-marker").count()).toBeGreaterThan(2);
+
+    const name = (await first.locator("span span").first().textContent())!;
+    await expect(markerNamed(page, name)).toHaveCount(0);
+    await first.hover();
+    await expect(markerNamed(page, name)).toBeVisible();
+    await page.mouse.move(1300, 450);
+    await expect(markerNamed(page, name)).toHaveCount(0);
+  });
+
+  test("Platser pins the saved places, and Plats gives its neighbourhood the whole map", async ({ page, request }) => {
+    const created = await request.post("/api/places", { data: { label: "Kontoret", placeId: SLUSSEN } });
+    expect(created.status()).toBe(201);
+    const { place } = await created.json();
+
+    await page.goto("/places");
+    const list = page.getByRole("region", { name: "Platser" });
+    const row = list.getByRole("link", { name: /Kontoret/ }).first();
+    await expect(row).toBeVisible();
+    await row.hover();
+    await expect(markerNamed(page, "Kontoret")).toBeVisible();
+
+    await page.goto(`/places/${place.id}`);
+    const panel = page.getByRole("region", { name: "Kontoret" });
+    await expect(panel.getByRole("heading", { name: "Kontoret" })).toBeVisible();
+    expect((await panel.boundingBox())!.x).toBe(88);
+    const map = (await page.getByRole("application", { name: "Karta över hållplatser i närheten" }).boundingBox())!;
+    expect(map.width).toBeGreaterThan(1300);
+    await expect(panel.getByRole("button", { name: "Byt namn" })).toBeVisible();
+  });
+});

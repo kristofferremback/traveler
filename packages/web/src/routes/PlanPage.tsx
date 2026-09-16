@@ -11,6 +11,7 @@ import { PlaceSearch, type PlaceChoice } from "@/components/PlaceSearch";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
 import { ModePicker, ModePill } from "@/components/ModePicker";
 import { TripControl } from "@/components/TripControl";
+import { MapPanel, PANEL_GAP, PANEL_WIDTH } from "@/components/MapPanel";
 import { JourneyCard } from "@/components/JourneyCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,10 +20,6 @@ import { Skeleton } from "@/components/ui/skeleton";
  * MapLibre and the pmtiles reader are about a megabyte, and most searches are answered
  * by reading the times off the first card. The map loads when it is asked for.
  */
-/** The panel's width and its gap from the rail, the same as the commute screen's. */
-const PANEL_WIDTH = 408;
-const PANEL_GAP = 12;
-
 const TransitMap = lazy(() =>
   import("@/components/TransitMap").then((m) => ({ default: m.TransitMap })),
 );
@@ -252,27 +249,23 @@ export function PlanPage() {
 
   if (desktop) {
     return (
-      <div className="fixed inset-y-0 right-0 left-[var(--nav-left)]">
-        <Suspense fallback={<div className="size-full bg-[var(--color-surface-2)]" />}>
-          <TransitMap
-            journey={selectedJourney}
-            topInset={48}
-            bottomInset={0}
-            leftInset={PANEL_GAP + PANEL_WIDTH}
-            className="relative size-full"
-          />
-        </Suspense>
-        <section
-          aria-label="Valfri resa"
-          className="pointer-events-none absolute top-3 bottom-3 left-3 z-20 flex w-[408px] flex-col"
+      <>
+        <MapPanel
+          label="Valfri resa"
+          map={
+            <TransitMap
+              journey={selectedJourney}
+              topInset={48}
+              leftInset={PANEL_GAP + PANEL_WIDTH}
+              className="relative size-full"
+            />
+          }
         >
-          <div className="pointer-events-auto flex max-h-full flex-col rounded-[var(--radius-sheet)] bg-[var(--color-surface)]/92 shadow-[var(--shadow-float)] backdrop-blur-xl">
-            <div className="shrink-0 p-3">{tripControl}</div>
-            <div className="min-h-0 space-y-2 overflow-y-auto px-3 pb-3">{answers}</div>
-          </div>
-        </section>
+          <div className="sticky top-0 z-10 bg-[var(--color-surface)] p-3">{tripControl}</div>
+          <div className="space-y-2 px-3 pb-3">{answers}</div>
+        </MapPanel>
         {pickers}
-      </div>
+      </>
     );
   }
 
