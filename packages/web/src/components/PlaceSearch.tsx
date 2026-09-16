@@ -13,6 +13,7 @@ import { api, ApiError } from "@/lib/api";
 import { formatDistance } from "@/lib/format";
 import { MODE_ICON } from "@/lib/modes";
 import { KIND_ICON } from "@/lib/savedPlaces";
+import { usePopover } from "@/hooks/usePopover";
 import { ModeChips } from "./LineBadge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -60,6 +61,7 @@ export function PlaceSearch({
   currentPosition = "off",
   focusField = false,
   footer,
+  anchor,
   onPick,
   onClose,
 }: {
@@ -82,10 +84,13 @@ export function PlaceSearch({
   focusField?: boolean;
   /** Sits under the shortcuts, inside the scrolling list so the keyboard cannot cover it. */
   footer?: ReactNode;
+  /** The `data-popover-anchor` of the control that opens it, for a popover on a desktop. */
+  anchor: string;
   onPick: (choice: PlaceChoice) => void;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const popover = usePopover(anchor, 360, onClose);
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
 
@@ -248,12 +253,20 @@ export function PlaceSearch({
         onClose();
       }}
       aria-label={title}
-      style={phone ? { height: box.height, transform: `translateY(${box.offsetTop}px)` } : undefined}
+      onClick={popover.onClick}
+      style={
+        popover.anchored
+          ? { ...popover.style, height: "min(34rem, 100%)" }
+          : phone
+            ? { height: box.height, transform: `translateY(${box.offsetTop}px)` }
+            : undefined
+      }
       className={cn(
         // A dialog's own max-height is "the viewport less a margin", which would leave
         // the bottom of the list floating above the tab bar rather than covering it.
         "m-0 flex h-full max-h-none w-full max-w-none flex-col overflow-hidden border-0 bg-[var(--color-bg)] text-[var(--color-fg)] backdrop:bg-black/50",
         "sm:mx-auto sm:my-[8dvh] sm:h-[min(34rem,84dvh)] sm:max-w-md sm:rounded-[var(--radius-card)] sm:border sm:border-[var(--color-border)] sm:bg-[var(--color-surface)]",
+        popover.className,
       )}
     >
       <div className="flex shrink-0 items-center gap-1 px-2 pb-1 pt-2 safe-top sm:pt-2">

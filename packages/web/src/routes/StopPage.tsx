@@ -38,7 +38,7 @@ export function StopPage() {
   const modes = place?.modes ?? [];
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 pb-24">
+    <div className="mx-auto w-full max-w-2xl px-4 pb-24 lg:max-w-5xl lg:pb-8">
       <header className="sticky top-0 z-20 -mx-4 flex items-center gap-2 bg-[var(--color-bg)]/95 px-4 pb-3 pt-3 backdrop-blur safe-top">
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)} aria-label="Tillbaka">
           <ArrowLeft />

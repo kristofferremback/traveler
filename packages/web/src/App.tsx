@@ -46,28 +46,35 @@ const TABS = [
   { to: "/settings", label: "Mer", icon: Settings, end: false },
 ];
 
+/**
+ * The app's four places, as a bar along the bottom on a phone and a rail down the left
+ * from 1024 px. One element in both layouts, so the landmark, the order and the names a
+ * screen reader reads out are the same on every screen size.
+ */
 function TabBar() {
   return (
     <nav
       aria-label="Huvudmeny"
-      className="fixed inset-x-0 bottom-[var(--browser-chrome)] z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur safe-bottom"
+      className="fixed inset-x-0 bottom-[var(--browser-chrome)] z-30 border-t border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur safe-bottom lg:inset-y-0 lg:right-auto lg:w-[var(--nav-left)] lg:border-t-0 lg:border-r lg:bg-[var(--color-surface)] lg:pt-3.5 lg:pb-3.5"
     >
-      <ul className="mx-auto flex max-w-2xl">
+      <ul className="mx-auto flex max-w-2xl lg:flex-col lg:items-center lg:gap-1.5">
         {TABS.map(({ to, label, icon: Icon, end }) => (
-          <li key={to} className="flex-1">
+          <li key={to} className="flex-1 lg:flex-none">
             <NavLink
               to={to}
               end={end}
               className={({ isActive }) =>
                 cn(
-                  "flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs",
-                  isActive ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]",
+                  "flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs lg:h-[62px] lg:w-16 lg:gap-1 lg:rounded-2xl lg:text-[11px]",
+                  isActive
+                    ? "text-[var(--color-accent)] lg:bg-[color-mix(in_oklch,var(--color-accent)_15%,transparent)]"
+                    : "text-[var(--color-muted)] lg:hover:bg-[var(--color-surface-2)] lg:hover:text-[var(--color-fg)]",
                 )
               }
             >
               {({ isActive }) => (
                 <>
-                  <Icon className="size-5" aria-hidden />
+                  <Icon className="size-5 lg:size-[22px]" aria-hidden />
                   <span>{label}</span>
                   {isActive ? <span className="sr-only">(aktuell sida)</span> : null}
                 </>
@@ -92,7 +99,7 @@ function ReloadPrompt() {
   const stale = useNewVersion();
   if (!stale) return null;
   return (
-    <div className="pointer-events-none fixed inset-x-0 z-40 flex justify-center px-3 above-tabs">
+    <div className="pointer-events-none fixed right-0 left-[var(--nav-left)] z-40 flex justify-center px-3 above-tabs">
       <button
         type="button"
         onClick={() => window.location.reload()}
@@ -160,7 +167,7 @@ export function App() {
 
   return (
     <ErrorBoundary>
-      <main className="min-h-dvh">
+      <main className={cn("min-h-dvh", !isPublic && "pl-[var(--nav-left)]")}>
         <Suspense fallback={loading}>
           <Routes>
             <Route path="/" element={<CommutePage />} />

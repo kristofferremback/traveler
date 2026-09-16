@@ -5,11 +5,13 @@ import type { Place } from "@traveler/shared";
 import { Map as MapIcon } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useOverlay } from "@/lib/overlay";
+import { useDesktop } from "@/hooks/useDesktop";
 import { parseModes } from "@/lib/modes";
 import { PlaceSearch, type PlaceChoice } from "@/components/PlaceSearch";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
 import { ModePicker, ModePill } from "@/components/ModePicker";
 import { TripControl } from "@/components/TripControl";
+import { MapPanel } from "@/components/MapPanel";
 import { JourneyCard } from "@/components/JourneyCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,9 +33,13 @@ const TransitMap = lazy(() =>
  *
  * The whole query lives in the URL, so a planned trip is a link. Back and forward move
  * through searches the way they move through pages, and reloading keeps the result.
+ *
+ * On a desktop it is laid out like the commute screen: the controls and the journeys in
+ * a panel over a map that is always there, drawing the selected journey.
  */
 export function PlanPage() {
   const [params, setParams] = useSearchParams();
+  const desktop = useDesktop();
   const [showMap, setShowMap] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -118,46 +124,38 @@ export function PlanPage() {
     [journeys, selected],
   );
 
-  return (
-    <div className="mx-auto w-full max-w-2xl px-3 pb-24">
-      <div className="sticky top-0 z-20 -mx-3 bg-[var(--color-bg)]/95 px-3 pb-3 pt-1 backdrop-blur safe-top">
-        <TripControl
-          fromLabel={from?.name ?? "Välj plats"}
-          toLabel={to?.name ?? "Välj plats"}
-          time={time}
-          onOpen={openPicker}
-          onSwap={swap}
-          trailing={
-            <>
-              <ModePill modes={modes} onOpen={() => openPicker("modes")} />
-              {journeys.length > 0 ? (
-                <Button
-                  type="button"
-                  variant={showMap ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setShowMap((v) => !v)}
-                  aria-pressed={showMap}
-                  className="rounded-full"
-                >
-                  <MapIcon />
-                  Karta
-                </Button>
-              ) : null}
-            </>
-          }
-        />
-      </div>
+  const tripControl = (
+    <TripControl
+      fromLabel={from?.name ?? "Välj plats"}
+      toLabel={to?.name ?? "Välj plats"}
+      time={time}
+      onOpen={openPicker}
+      onSwap={swap}
+      trailing={
+        <>
+          <ModePill modes={modes} onOpen={() => openPicker("modes")} />
+          {journeys.length > 0 && !desktop ? (
+            <Button
+              type="button"
+              variant={showMap ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowMap((v) => !v)}
+              aria-pressed={showMap}
+              className="rounded-full"
+            >
+              <MapIcon />
+              Karta
+            </Button>
+          ) : null}
+        </>
+      }
+    />
+  );
 
-      {showMap && selectedJourney ? (
-        <div className="relative mb-3 h-64 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)]">
-          <Suspense fallback={<Skeleton className="size-full rounded-none" />}>
-            <TransitMap journey={selectedJourney} className="relative size-full" />
-          </Suspense>
-        </div>
-      ) : null}
-
+  const answers = (
+    <>
       {!fromId || !toId ? (
-        <p className="mt-8 text-center text-sm text-[var(--color-muted)]">
+        <p className="mt-8 text-center text-sm text-[var(--color-muted)] lg:my-2">
           Välj var du börjar och var du ska.
         </p>
       ) : null}
@@ -210,7 +208,11 @@ export function PlanPage() {
           {notice}
         </p>
       ))}
+    </>
+  );
 
+  const pickers = (
+    <>
       {picker === "time" ? (
         <TimePicker
           time={time}
@@ -232,6 +234,8 @@ export function PlanPage() {
       {picker === "from" || picker === "to" ? (
         <PlaceSearch
           title={picker === "from" ? "Var börjar du?" : "Vart ska du?"}
+          anchor="ends"
+          focusField={desktop}
           saved={saved}
           /* An address rather than the live ref the commute screen keeps: this screen
              plans one trip from one point, and the URL has to name it. */
@@ -240,6 +244,40 @@ export function PlanPage() {
           onClose={closePicker}
         />
       ) : null}
+    </>
+  );
+
+  if (desktop) {
+    return (
+      <>
+        <MapPanel
+          label="Valfri resa"
+          map={{ journey: selectedJourney, topInset: 48 }}
+        >
+          <div className="sticky top-0 z-10 bg-[var(--color-surface)] p-3">{tripControl}</div>
+          <div className="space-y-2 px-3 pb-3">{answers}</div>
+        </MapPanel>
+        {pickers}
+      </>
+    );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-2xl px-3 pb-24">
+      <div className="sticky top-0 z-20 -mx-3 bg-[var(--color-bg)]/95 px-3 pb-3 pt-1 backdrop-blur safe-top">
+        {tripControl}
+      </div>
+
+      {showMap && selectedJourney ? (
+        <div className="relative mb-3 h-64 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)]">
+          <Suspense fallback={<Skeleton className="size-full rounded-none" />}>
+            <TransitMap journey={selectedJourney} className="relative size-full" />
+          </Suspense>
+        </div>
+      ) : null}
+
+      {answers}
+      {pickers}
     </div>
   );
 }

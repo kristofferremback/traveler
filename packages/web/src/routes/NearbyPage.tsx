@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { LocateFixed, Loader2 } from "lucide-react";
@@ -6,8 +6,11 @@ import { api } from "@/lib/api";
 import { formatDistance } from "@/lib/format";
 import { ModeChips } from "@/components/LineBadge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MapPanel } from "@/components/MapPanel";
+import { useDesktop } from "@/hooks/useDesktop";
+import { modeColor } from "@/lib/modes";
+import { cn } from "@/lib/utils";
 
 type Position = { lat: number; lon: number };
 
@@ -18,6 +21,9 @@ const RADIUS_M = 1200;
 const round = (n: number) => n.toFixed(4);
 
 export function NearbyPage() {
+  const desktop = useDesktop();
+  /** The row under a mouse pointer, whose stop is named on the map. */
+  const [hovered, setHovered] = useState<string | null>(null);
   const [position, setPosition] = useState<Position | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -61,8 +67,20 @@ export function NearbyPage() {
     staleTime: 60_000,
   });
 
-  return (
-    <div className="mx-auto w-full max-w-2xl px-4 pb-24">
+  const pins = useMemo(
+    () =>
+      stops.data?.places.map((place) => ({
+        id: String(place.siteId),
+        lat: place.lat,
+        lon: place.lon,
+        label: place.name,
+        color: place.modes[0] ? modeColor(place.modes[0]) : undefined,
+      })) ?? [],
+    [stops.data],
+  );
+
+  const content = (
+    <>
       <header className="flex items-center justify-between gap-2 pb-3 pt-3 safe-top">
         <h1 className="text-lg font-semibold">Nära dig</h1>
         <Button variant="outline" size="sm" onClick={locate} disabled={locating}>
@@ -93,31 +111,47 @@ export function NearbyPage() {
         </p>
       ) : null}
 
-      <ul className="space-y-2">
+      {/* In the desktop panel the rows divide one card rather than stacking cards in it. */}
+      <ul className={desktop ? "-mx-4 divide-y divide-[var(--color-border)]" : "space-y-2"}>
         {stops.data?.places.map((place) => (
           <li key={place.id}>
-            <Card>
-              <Link
-                to={`/stop/${place.siteId}`}
-                className="flex min-h-16 items-center gap-3 p-4"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{place.name}</span>
-                  {place.locality ? (
-                    <span className="block truncate text-xs text-[var(--color-muted)]">
-                      {place.locality}
-                    </span>
-                  ) : null}
-                </span>
-                <ModeChips modes={place.modes} />
-                <span className="text-xs tabular-nums text-[var(--color-muted)]">
-                  {formatDistance(place.distanceMetres)}
-                </span>
-              </Link>
-            </Card>
+            <Link
+              to={`/stop/${place.siteId}`}
+              onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(String(place.siteId))}
+              onPointerLeave={(e) => e.pointerType === "mouse" && setHovered(null)}
+              className={cn(
+                "flex items-center gap-3",
+                desktop
+                  ? "min-h-14 px-4 py-2.5 hover:bg-[var(--color-surface-2)]"
+                  : "min-h-16 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4",
+              )}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{place.name}</span>
+                {place.locality ? (
+                  <span className="block truncate text-xs text-[var(--color-muted)]">
+                    {place.locality}
+                  </span>
+                ) : null}
+              </span>
+              <ModeChips modes={place.modes} />
+              <span className="text-xs tabular-nums text-[var(--color-muted)]">
+                {formatDistance(place.distanceMetres)}
+              </span>
+            </Link>
           </li>
         ))}
       </ul>
-    </div>
+    </>
   );
+
+  if (desktop) {
+    return (
+      <MapPanel label="Hållplatser nära dig" map={{ pins, here: position, highlight: hovered }}>
+        <div className="px-4 pb-4">{content}</div>
+      </MapPanel>
+    );
+  }
+
+  return <div className="mx-auto w-full max-w-2xl px-4 pb-24">{content}</div>;
 }

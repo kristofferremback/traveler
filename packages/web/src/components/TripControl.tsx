@@ -27,7 +27,10 @@ export function TripControl({
 }) {
   return (
     <div className="pointer-events-auto flex flex-col items-start gap-2">
-      <div className="flex w-full items-stretch gap-1 rounded-[var(--radius-card)] bg-[var(--color-surface)]/90 p-1.5 shadow-[var(--shadow-float)] backdrop-blur-xl">
+      <div
+        data-popover-anchor="ends"
+        className="flex w-full items-stretch gap-1 rounded-[var(--radius-card)] bg-[var(--color-surface)]/90 p-1.5 shadow-[var(--shadow-float)] backdrop-blur-xl"
+      >
         <End end="from" caption="Från" label={fromLabel} onOpen={onOpen} />
         <button
           type="button"

@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Plus } from "lucide-react";
@@ -5,18 +6,34 @@ import { api, ApiError } from "@/lib/api";
 import { KIND_ICON, KIND_LABEL } from "@/lib/savedPlaces";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MapPanel } from "@/components/MapPanel";
+import { useDesktop } from "@/hooks/useDesktop";
+import { cn } from "@/lib/utils";
 
 /** The places you keep, in the order you put them in. */
 export function PlacesPage() {
+  const desktop = useDesktop();
+  const [hovered, setHovered] = useState<string | null>(null);
   const places = useQuery({
     queryKey: ["places"],
     queryFn: ({ signal }) => api.places.list(signal),
   });
 
   const rows = places.data?.places ?? [];
+  const pins = useMemo(
+    () =>
+      (places.data?.places ?? []).map((place) => ({
+        id: String(place.id),
+        lat: place.lat,
+        lon: place.lon,
+        label: place.label,
+        named: true,
+      })),
+    [places.data],
+  );
 
-  return (
-    <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24">
+  const content = (
+    <>
       <header className="flex items-center justify-between gap-2 pb-1 pt-3 safe-top">
         <h1 className="text-lg font-semibold">Platser</h1>
         <Button asChild size="sm">
@@ -52,14 +69,22 @@ export function PlacesPage() {
         </p>
       ) : null}
 
-      <ul className="space-y-2">
+      {/* In the desktop panel the rows divide one card rather than stacking cards in it. */}
+      <ul className={desktop ? "-mx-4 divide-y divide-[var(--color-border)]" : "space-y-2"}>
         {rows.map((place) => {
           const Icon = KIND_ICON[place.kind];
           return (
             <li key={place.id}>
               <Link
                 to={`/places/${place.id}`}
-                className="flex min-h-14 items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+                onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(String(place.id))}
+                onPointerLeave={(e) => e.pointerType === "mouse" && setHovered(null)}
+                className={cn(
+                  "flex min-h-14 items-center gap-3",
+                  desktop
+                    ? "px-4 py-3 hover:bg-[var(--color-surface-2)]"
+                    : "rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3",
+                )}
               >
                 <Icon className="size-5 shrink-0 text-[var(--color-muted)]" aria-hidden />
                 <span className="min-w-0 flex-1">
@@ -74,6 +99,16 @@ export function PlacesPage() {
           );
         })}
       </ul>
-    </div>
+    </>
   );
+
+  if (desktop) {
+    return (
+      <MapPanel label="Platser" map={{ pins, highlight: hovered }}>
+        <div className="space-y-4 px-4 pb-4">{content}</div>
+      </MapPanel>
+    );
+  }
+
+  return <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24">{content}</div>;
 }

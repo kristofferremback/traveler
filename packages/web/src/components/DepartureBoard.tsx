@@ -9,8 +9,14 @@ import { LineBadge } from "./LineBadge";
 import { Badge } from "./ui/badge";
 import { Skeleton } from "./ui/skeleton";
 import { cn } from "@/lib/utils";
+import { useDesktop } from "@/hooks/useDesktop";
 
+/**
+ * A stop's departures, live. On a desktop it is a table, like the boards on the platform,
+ * with the stop's notices in a column beside it instead of above.
+ */
 export function DepartureBoard({ siteId, siteName }: { siteId: number; siteName?: string }) {
+  const desktop = useDesktop();
   // The same list the trip screens filter by, so "Båt" means the same thing on a
   // timetable as it does in a search -- and covers the ferry berths, which the board's
   // own copy of this list used to leave off the board entirely.
@@ -49,60 +55,151 @@ export function DepartureBoard({ siteId, siteName }: { siteId: number; siteName?
   }, []);
   const stale = updatedAt !== null && now - updatedAt > 60_000;
 
-  return (
-    <section aria-label={`Avgångar från ${siteName ?? data?.siteName ?? "hållplats"}`}>
-      {availableModes.length > 1 || mode !== null ? (
-        <div
-          role="tablist"
-          aria-label="Filtrera färdmedel"
-          className="mb-3 flex gap-1.5 overflow-x-auto pb-1"
-        >
-          {[null, ...availableModes].map((filter) => (
-            <button
-              key={filter?.label ?? "alla"}
-              role="tab"
-              aria-selected={mode === filter}
-              onClick={() => setMode(filter)}
-              className={cn(
-                "min-h-11 min-w-20 shrink-0 rounded-full border px-4 text-xs",
-                mode === filter
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-bg)]"
-                  : "border-[var(--color-border)] text-[var(--color-muted)]",
-              )}
-            >
-              {filter?.label ?? "Alla"}
-            </button>
-          ))}
+  const tabs =
+    availableModes.length > 1 || mode !== null ? (
+      <div
+        role="tablist"
+        aria-label="Filtrera färdmedel"
+        className="mb-3 flex gap-1.5 overflow-x-auto pb-1"
+      >
+        {[null, ...availableModes].map((filter) => (
+          <button
+            key={filter?.label ?? "alla"}
+            role="tab"
+            aria-selected={mode === filter}
+            onClick={() => setMode(filter)}
+            className={cn(
+              "min-h-11 min-w-20 shrink-0 rounded-full border px-4 text-xs",
+              mode === filter
+                ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-bg)]"
+                : "border-[var(--color-border)] text-[var(--color-muted)]",
+            )}
+          >
+            {filter?.label ?? "Alla"}
+          </button>
+        ))}
+      </div>
+    ) : null;
+
+  const notices = data?.deviations.map((deviation) => (
+    <p
+      key={deviation.id}
+      className="mb-2 flex gap-2 rounded-lg bg-[var(--color-warn)]/10 p-3 text-xs text-[var(--color-warn)]"
+    >
+      <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <span>{deviation.details || deviation.header}</span>
+    </p>
+  ));
+
+  const waiting =
+    !connected && !data ? (
+      <ul className="space-y-2" aria-busy="true" aria-label="Hämtar avgångar">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <li key={i}>
+            <Skeleton className="h-14 w-full" />
+          </li>
+        ))}
+      </ul>
+    ) : null;
+
+  const empty =
+    data && departures.length === 0 ? (
+      <p className="rounded-lg border border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
+        {mode === null
+          ? "Inga avgångar den närmaste timmen."
+          : "Inga avgångar med det färdmedlet den närmaste timmen."}
+      </p>
+    ) : null;
+
+  // Only shown when something is actually wrong. Success is silent because the times on
+  // screen already say the stream is alive.
+  const stalled =
+    error || stale ? (
+      <p className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+        <RefreshCw className="size-3" aria-hidden />
+        {error ?? "Uppdateras inte just nu."}
+        {updatedAt ? ` Senast ${formatTime(new Date(updatedAt).toISOString())}.` : ""}
+      </p>
+    ) : null;
+
+  const label = `Avgångar från ${siteName ?? data?.siteName ?? "hållplats"}`;
+  /** The part of a stop the departure leaves from, when the stop has more than one. */
+  const area = (departure: (typeof departures)[number]) =>
+    departure.stopAreaName && departure.stopAreaName !== data?.siteName
+      ? departure.stopAreaName
+      : null;
+
+  if (desktop) {
+    return (
+      <section aria-label={label}>
+        {tabs}
+        <div className={cn(notices?.length && "grid grid-cols-[minmax(0,1fr)_320px] items-start gap-6")}>
+          <div>
+            {/* Above the table, where the phone shows it under the list, because a long
+                table pushes the bottom out of sight. */}
+            {stalled ? <div className="mb-3">{stalled}</div> : null}
+            {waiting}
+            {empty}
+            {departures.length > 0 ? (
+              <table className="w-full text-sm tabular-nums">
+                <thead>
+                  <tr className="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-muted)]">
+                    <th scope="col" className="w-20 py-2 pr-3 font-medium">Linje</th>
+                    <th scope="col" className="py-2 pr-3 font-medium">Mot</th>
+                    <th scope="col" className="py-2 pr-3 font-medium">Läge</th>
+                    <th scope="col" className="py-2 pr-3 text-right font-medium">Tid</th>
+                    <th scope="col" className="py-2 text-right font-medium">Avgår</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-border)]">
+                  {departures.map((departure) => {
+                    const delay = formatDelay(departure.delaySeconds);
+                    const cancelled = departure.state === "CANCELLED";
+                    return (
+                      <tr key={departure.key}>
+                        <td className="py-2.5 pr-3">
+                          <LineBadge line={departure.line} />
+                        </td>
+                        <td className={cn("py-2.5 pr-3", cancelled && "line-through opacity-60")}>
+                          {departure.destination}
+                        </td>
+                        <td className="py-2.5 pr-3 text-[var(--color-muted)]">
+                          {[departure.platform, area(departure)].filter(Boolean).join(" · ")}
+                        </td>
+                        <td className="py-2.5 pr-3 text-right text-[var(--color-muted)]">
+                          {formatTime(departure.scheduled)}
+                        </td>
+                        <td className="py-2.5 text-right">
+                          {cancelled ? (
+                            <Badge variant="danger">Inställd</Badge>
+                          ) : (
+                            <>
+                              <span className="font-semibold">{departure.display}</span>
+                              {delay ? (
+                                <span className="block text-xs text-[var(--color-warn)]">{delay}</span>
+                              ) : null}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : null}
+          </div>
+          {notices?.length ? <aside aria-label="Meddelanden">{notices}</aside> : null}
         </div>
-      ) : null}
+      </section>
+    );
+  }
 
-      {data?.deviations.map((deviation) => (
-        <p
-          key={deviation.id}
-          className="mb-2 flex gap-2 rounded-lg bg-[var(--color-warn)]/10 p-3 text-xs text-[var(--color-warn)]"
-        >
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <span>{deviation.details || deviation.header}</span>
-        </p>
-      ))}
-
-      {!connected && !data ? (
-        <ul className="space-y-2" aria-busy="true" aria-label="Hämtar avgångar">
-          {[0, 1, 2, 3, 4].map((i) => (
-            <li key={i}>
-              <Skeleton className="h-14 w-full" />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      {data && departures.length === 0 ? (
-        <p className="rounded-lg border border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
-          {mode === null
-            ? "Inga avgångar den närmaste timmen."
-            : "Inga avgångar med det färdmedlet den närmaste timmen."}
-        </p>
-      ) : null}
+  return (
+    <section aria-label={label}>
+      {tabs}
+      {notices}
+      {waiting}
+      {empty}
 
       <ul className="divide-y divide-[var(--color-border)]">
         {departures.map((departure) => {
@@ -119,9 +216,7 @@ export function DepartureBoard({ siteId, siteName }: { siteId: number; siteName?
                 <p className="text-xs text-[var(--color-muted)]">
                   {formatTime(departure.scheduled)}
                   {departure.platform ? ` · läge ${departure.platform}` : ""}
-                  {departure.stopAreaName && departure.stopAreaName !== data?.siteName
-                    ? ` · ${departure.stopAreaName}`
-                    : ""}
+                  {area(departure) ? ` · ${area(departure)}` : ""}
                 </p>
               </div>
 
@@ -147,15 +242,7 @@ export function DepartureBoard({ siteId, siteName }: { siteId: number; siteName?
         })}
       </ul>
 
-      {/* Only shown when something is actually wrong. Success is silent because the
-          times on screen already say the stream is alive. */}
-      {error || stale ? (
-        <p className="mt-3 flex items-center gap-2 text-xs text-[var(--color-muted)]">
-          <RefreshCw className="size-3" aria-hidden />
-          {error ?? "Uppdateras inte just nu."}
-          {updatedAt ? ` Senast ${formatTime(new Date(updatedAt).toISOString())}.` : ""}
-        </p>
-      ) : null}
+      {stalled ? <div className="mt-3">{stalled}</div> : null}
     </section>
   );
 }

@@ -12,6 +12,7 @@ import { streams } from "@/lib/api";
 import { useStream } from "@/hooks/useStream";
 import { modeColor } from "@/lib/modes";
 import { formatTime } from "@/lib/format";
+import { hoodStopKey } from "@/lib/savedPlaces";
 import { cn } from "@/lib/utils";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -35,6 +36,7 @@ const RING_SOURCE = "hood-rings";
 const WALK_SOURCE = "hood-walks";
 const HOOD_STOP_SOURCE = "hood-stops";
 const OUR_WALK_SOURCE = "our-walk";
+const PREVIEW_SOURCE = "preview-route";
 
 type Theme = "dark" | "light";
 
@@ -94,6 +96,38 @@ function routeGeoJSON(journey: Journey | null): FeatureCollection {
         },
       })),
   };
+}
+
+/**
+ * A trip under the pointer, as one faint line per ride.
+ *
+ * Only the recommended trip comes with its drawn path, so a ride without one is a
+ * straight line from where it is boarded to where it is left: enough to see which way a
+ * row goes before choosing it, and never mistaken for the chosen route.
+ */
+function previewGeoJSON(option: CommuteOption | null): FeatureCollection {
+  if (!option) return { type: "FeatureCollection", features: [] };
+  const features: Feature[] = [];
+  for (const leg of option.journey.legs) {
+    if (leg.mode === "WALK") continue;
+    const { origin: from, destination: to } = leg;
+    const coordinates =
+      leg.path.length > 1
+        ? leg.path
+        : from.lat !== null && from.lon !== null && to.lat !== null && to.lon !== null
+          ? [
+              [from.lon, from.lat],
+              [to.lon, to.lat],
+            ]
+          : null;
+    if (!coordinates) continue;
+    features.push({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates },
+      properties: { color: modeColor(leg.mode, leg.line?.designation) },
+    });
+  }
+  return { type: "FeatureCollection", features };
 }
 
 function stopsGeoJSON(journey: Journey | null): FeatureCollection {
@@ -178,7 +212,7 @@ function walksGeoJSON(hood: Neighbourhood | null): FeatureCollection {
       .map((stop) => ({
         type: "Feature" as const,
         geometry: { type: "LineString" as const, coordinates: stop.path },
-        properties: { name: stop.name },
+        properties: { name: stop.name, key: hoodStopKey(stop) },
       })),
   };
 }
@@ -190,7 +224,7 @@ function hoodStopsGeoJSON(hood: Neighbourhood | null): FeatureCollection {
     features: hood.stops.map((stop) => ({
       type: "Feature" as const,
       geometry: { type: "Point" as const, coordinates: [stop.lon, stop.lat] },
-      properties: { color: modeColor(stop.mode), name: stop.name },
+      properties: { color: modeColor(stop.mode), name: stop.name, key: hoodStopKey(stop) },
     })),
   };
 }
@@ -221,6 +255,34 @@ function minuteLabel(seconds: number): HTMLElement {
   el.className =
     "pointer-events-none rounded-full border border-[var(--color-border)] bg-[var(--color-surface)]/90 px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-fg)]";
   el.textContent = `${Math.max(1, Math.round(seconds / 60))} min`;
+  return el;
+}
+
+/**
+ * A place on a list, shown where it is: a dot in the mode's colour, and its name beside
+ * it while its row is under the pointer, or always for a pin that is `named`. Not a
+ * control: the row is, at a size a finger can hit, and a second way in the size of a dot
+ * would only be a worse one.
+ */
+function pinElement(pin: MapPin, highlighted: boolean): HTMLElement {
+  const labelled = highlighted || pin.named;
+  const el = document.createElement("span");
+  el.setAttribute("aria-hidden", "true");
+  el.className = cn(
+    "flex items-center gap-1.5 rounded-full",
+    labelled
+      ? "bg-[var(--color-surface)] py-1 pr-2.5 pl-1 text-xs font-semibold text-[var(--color-fg)] shadow-[var(--shadow-float)]"
+      : "p-1",
+    highlighted && "z-10",
+  );
+  const dot = document.createElement("span");
+  dot.className = cn(
+    "block shrink-0 rounded-full border-2 border-white shadow-[0_1px_3px_rgba(0,0,0,0.4)]",
+    highlighted ? "size-4" : "size-3",
+  );
+  dot.style.backgroundColor = pin.color ?? "var(--color-accent)";
+  el.append(dot);
+  if (labelled) el.append(pin.label);
   return el;
 }
 
@@ -403,14 +465,30 @@ function doorsOf(option: CommuteOption | null): {
   };
 }
 
+/** One thing from a list beside the map, placed on it. */
+type MapPin = {
+  id: string;
+  lat: number;
+  lon: number;
+  label: string;
+  color?: string;
+  /** Named on the map without a pointer over its row, for a list short enough to label. */
+  named?: boolean;
+};
+
 export function TransitMap({
   journey,
   option,
   neighbourhood,
   showVehicles = false,
   vehicleTrip = null,
+  preview = null,
+  pins,
+  here = null,
+  highlight = null,
   topInset = 120,
   bottomInset = 0,
+  leftInset = 0,
   className,
 }: {
   journey?: Journey | null;
@@ -428,6 +506,20 @@ export function TransitMap({
    */
   vehicleTrip?: VehicleTrip | null;
   /**
+   * A trip the pointer is over, drawn faintly under the chosen one. The camera does not
+   * move for it: a list swept with a mouse would otherwise swing the map at every row.
+   */
+  preview?: CommuteOption | null;
+  /** The rows of a list beside the map, as dots. The camera fits them when the list changes. */
+  pins?: MapPin[];
+  /** Where the traveller is, drawn with the pins and fitted with them. */
+  here?: { lat: number; lon: number } | null;
+  /**
+   * The id of the row under the pointer: a pin's id, or a neighbourhood stop's key, whose
+   * walk is then drawn solid. Nothing refits for it.
+   */
+  highlight?: string | null;
+  /**
    * Pixels at the top covered by the app's own floating controls, used as camera padding
    * for the same reason as `bottomInset`. It is the caller's measurement rather than a
    * number here, because the controls are as tall as the labels in them.
@@ -439,6 +531,11 @@ export function TransitMap({
    * one: a drag is a hundred numbers and the camera only reads this when it fits.
    */
   bottomInset?: number;
+  /**
+   * Pixels at the left covered by a panel, as on the desktop layout where the list floats
+   * over the map's left edge. Camera padding like the others, so a trip lands beside it.
+   */
+  leftInset?: number;
   className?: string;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -447,6 +544,7 @@ export function TransitMap({
   const doorMarkers = useRef<maplibregl.Marker[]>([]);
   const calloutMarkers = useRef<maplibregl.Marker[]>([]);
   const vehicleMarkers = useRef<maplibregl.Marker[]>([]);
+  const pinMarkers = useRef<maplibregl.Marker[]>([]);
   const [ready, setReady] = useState(false);
   const [bbox, setBbox] = useState<string | null>(null);
   const [styleError, setStyleError] = useState(false);
@@ -471,6 +569,8 @@ export function TransitMap({
   insetRef.current = Math.min(bottomInset, Math.round(window.innerHeight * 0.4));
   const topRef = useRef(0);
   topRef.current = topInset;
+  const leftRef = useRef(0);
+  leftRef.current = leftInset;
 
   useEffect(() => {
     if (!container.current || map.current) return;
@@ -618,7 +718,7 @@ export function TransitMap({
         // The sheet covers the bottom of the map and the controls cover the top, so the
         // padding has to keep the trip between them rather than centring it under the
         // rows; the sides leave room for a callout to hang off its stop.
-        padding: { top: topRef.current, bottom: 48 + insetRef.current, left: 40, right: 40 },
+        padding: { top: topRef.current, bottom: 48 + insetRef.current, left: 40 + leftRef.current, right: 40 },
         maxZoom: 15,
         // Respect a reduced-motion preference rather than flying the camera.
         animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -627,7 +727,9 @@ export function TransitMap({
     return () => {
       instance.off("moveend", render);
     };
-  }, [drawn, option, ready]);
+    // The left inset too: the trip column opening or closing beside the panel changes how
+    // much map is left to frame the trip in.
+  }, [drawn, option, ready, leftInset]);
 
   useEffect(() => {
     const instance = map.current;
@@ -686,7 +788,7 @@ export function TransitMap({
     const bounds = boundsOfNeighbourhood(hood);
     if (bounds) {
       instance.fitBounds(bounds, {
-        padding: { top: 40, bottom: 40 + insetRef.current, left: 28, right: 28 },
+        padding: { top: 40, bottom: 40 + insetRef.current, left: 28 + leftRef.current, right: 28 },
         maxZoom: 15,
         animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       });
@@ -694,6 +796,56 @@ export function TransitMap({
 
     return detach;
   }, [neighbourhood, ready]);
+
+  // The pins are redrawn when the highlight moves, which is cheap: tens of DOM markers.
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready) return;
+    for (const marker of pinMarkers.current) marker.remove();
+    pinMarkers.current = [];
+    if (here) {
+      pinMarkers.current.push(
+        new maplibregl.Marker({ element: placeMarker() }).setLngLat([here.lon, here.lat]).addTo(instance),
+      );
+    }
+    for (const pin of pins ?? []) {
+      const lit = pin.id === highlight;
+      const element = pinElement(pin, lit);
+      const labelled = lit || pin.named;
+      pinMarkers.current.push(
+        new maplibregl.Marker({ element, anchor: labelled ? "left" : "center", offset: labelled ? [-12, 0] : [0, 0] })
+          .setLngLat([pin.lon, pin.lat])
+          .addTo(instance),
+      );
+    }
+    for (const layer of ["hood-walk-lit", "hood-stop-lit"]) {
+      if (instance.getLayer(layer)) instance.setFilter(layer, ["==", ["get", "key"], highlight ?? ""]);
+    }
+  }, [pins, here, highlight, ready]);
+
+  const pinIds = pins?.map((p) => p.id).join(",");
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready || !pins) return;
+    const bounds = new maplibregl.LngLatBounds();
+    for (const pin of pins) bounds.extend([pin.lon, pin.lat]);
+    if (here) bounds.extend([here.lon, here.lat]);
+    if (bounds.isEmpty()) return;
+    instance.fitBounds(bounds, {
+      padding: { top: 60, bottom: 40 + insetRef.current, left: 60 + leftRef.current, right: 60 },
+      maxZoom: 16,
+      animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    });
+    // Fitted when the list is a different list, not when the same rows re-render.
+  }, [pinIds, here?.lat, here?.lon, ready]);
+
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready) return;
+    (instance.getSource(PREVIEW_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(
+      previewGeoJSON(preview && preview.id !== option?.id ? preview : null),
+    );
+  }, [preview, option, ready]);
 
   const wantsVehicles = showVehicles || vehicleTrip !== null;
 
@@ -790,7 +942,7 @@ export function TransitMap({
         ref={container}
         className="size-full"
         role="application"
-        aria-label={neighbourhood ? "Karta över hållplatser i närheten" : "Karta över resan"}
+        aria-label={neighbourhood ? "Karta över hållplatser i närheten" : pins ? "Karta" : "Karta över resan"}
       />
       {styleError ? (
         <p className="absolute inset-x-3 top-3 rounded-lg bg-[var(--color-surface)]/95 p-2 text-xs text-[var(--color-muted)]">
@@ -846,6 +998,16 @@ function addSourcesAndLayers(instance: MapLibreMap) {
     },
     layout: { "line-cap": "round", "line-join": "round" },
   });
+  // The walk to the stop under the pointer, solid over the dashed ones. The filter is set
+  // by the highlight; nothing matches until then.
+  instance.addLayer({
+    id: "hood-walk-lit",
+    type: "line",
+    source: WALK_SOURCE,
+    filter: ["==", ["get", "key"], ""],
+    paint: { "line-color": "#4c9be8", "line-width": 5 },
+    layout: { "line-cap": "round", "line-join": "round" },
+  });
   instance.addLayer({
     id: "hood-stop-dots",
     type: "circle",
@@ -856,6 +1018,27 @@ function addSourcesAndLayers(instance: MapLibreMap) {
       "circle-stroke-color": "#ffffff",
       "circle-stroke-width": 1.5,
     },
+  });
+  instance.addLayer({
+    id: "hood-stop-lit",
+    type: "circle",
+    source: HOOD_STOP_SOURCE,
+    filter: ["==", ["get", "key"], ""],
+    paint: {
+      "circle-radius": 8,
+      "circle-color": ["get", "color"],
+      "circle-stroke-color": "#ffffff",
+      "circle-stroke-width": 2.5,
+    },
+  });
+
+  instance.addSource(PREVIEW_SOURCE, { type: "geojson", data: previewGeoJSON(null) });
+  instance.addLayer({
+    id: "preview-line",
+    type: "line",
+    source: PREVIEW_SOURCE,
+    paint: { "line-color": ["get", "color"], "line-width": 4, "line-opacity": 0.45 },
+    layout: { "line-cap": "round", "line-join": "round" },
   });
 
   instance.addSource(ROUTE_SOURCE, { type: "geojson", data: routeGeoJSON(null) });

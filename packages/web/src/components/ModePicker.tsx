@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { TransportMode } from "@traveler/shared";
 import { Filter, X } from "lucide-react";
 import { MODE_FILTERS, MODE_ICON, describeModes, selectedFilters, toggleMode } from "@/lib/modes";
+import { usePopover } from "@/hooks/usePopover";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ export function ModePill({ modes, onOpen }: { modes: TransportMode[]; onOpen: ()
       type="button"
       onClick={onOpen}
       aria-haspopup="dialog"
+      data-popover-anchor="modes"
       className={cn(
         "pointer-events-auto inline-flex min-h-11 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface)]/90 px-3.5 text-sm font-medium shadow-[var(--shadow-float)] backdrop-blur-xl",
         chosen.length > 0 && "text-[var(--color-accent)]",
@@ -49,6 +51,7 @@ export function ModePicker({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const popover = usePopover("modes", 330, onClose);
   const [chosen, setChosen] = useState<TransportMode[]>(modes);
 
   useEffect(() => {
@@ -66,7 +69,12 @@ export function ModePicker({
         onClose();
       }}
       aria-label="Välj färdmedel"
-      className="m-0 mt-auto w-full max-w-none rounded-t-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg)] backdrop:bg-black/50 sm:mx-auto sm:mb-auto sm:mt-[10dvh] sm:max-w-md sm:rounded-[var(--radius-card)]"
+      style={popover.style}
+      onClick={popover.onClick}
+      className={cn(
+        "m-0 mt-auto w-full max-w-none rounded-t-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg)] backdrop:bg-black/50 sm:mx-auto sm:mb-auto sm:mt-[10dvh] sm:max-w-md sm:rounded-[var(--radius-card)]",
+        popover.className,
+      )}
     >
       <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-2">
         <h2 className="text-sm font-semibold">Vilka färdmedel?</h2>

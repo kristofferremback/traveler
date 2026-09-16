@@ -41,6 +41,7 @@ export function TripRow({
   now,
   selected,
   onOpen,
+  onHover,
   arriveLabel,
   note,
   className,
@@ -49,6 +50,8 @@ export function TripRow({
   now: number;
   selected: boolean;
   onOpen: (option: CommuteOption) => void;
+  /** The row under a mouse pointer, and null when it leaves. Touch never hovers. */
+  onHover?: (option: CommuteOption | null) => void;
   /** Said instead of the status under the arrival, when the row is one of the branches. */
   arriveLabel?: string | null;
   /** A line under the ride, for what the times alone do not say. */
@@ -61,10 +64,12 @@ export function TripRow({
     <button
       type="button"
       onClick={() => onOpen(option)}
+      onPointerEnter={onHover ? (e) => e.pointerType === "mouse" && onHover(option) : undefined}
+      onPointerLeave={onHover ? (e) => e.pointerType === "mouse" && onHover(null) : undefined}
       aria-current={selected ? "true" : undefined}
       className={cn(
         "grid min-h-14 w-full grid-cols-[84px_1fr_auto] items-center gap-2 rounded-xl px-3 py-2 text-left",
-        selected && "bg-[var(--color-surface-2)]",
+        selected ? "bg-[var(--color-surface-2)]" : "lg:hover:bg-[var(--color-surface-2)]/60",
         status === "missed" && "opacity-55",
         className,
       )}
@@ -107,11 +112,13 @@ export function CommuteRows({
   selectedId,
   now,
   onOpen,
+  onHover,
 }: {
   options: CommuteOption[];
   selectedId: string | null;
   now: number;
   onOpen: (option: CommuteOption) => void;
+  onHover?: (option: CommuteOption | null) => void;
 }) {
   return (
     <ul aria-label="Resor" className="-mx-3 divide-y divide-[var(--color-border)]">
@@ -134,6 +141,7 @@ export function CommuteRows({
               now={now}
               selected={option.id === selectedId}
               onOpen={onOpen}
+              onHover={onHover}
               note={marks.length > 0 ? marks.join(" · ") : null}
               className="rounded-none"
             />

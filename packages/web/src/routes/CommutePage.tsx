@@ -5,6 +5,7 @@ import type { CommuteOption, SavedPlace } from "@traveler/shared";
 import { api, ApiError } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import { useOverlay } from "@/lib/overlay";
+import { useDesktop, useDesktopKeys, useWide } from "@/hooks/useDesktop";
 import { accumulate, type Answered } from "@/lib/trips";
 import { parseModes } from "@/lib/modes";
 import { BottomSheet, PEEK_HEIGHT } from "@/components/BottomSheet";
@@ -14,6 +15,7 @@ import { PlaceSearch, type PlaceChoice } from "@/components/PlaceSearch";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
 import { ModePicker, ModePill } from "@/components/ModePicker";
 import { TripControl } from "@/components/TripControl";
+import { FloatingCard, PANEL_GAP, PANEL_WIDTH } from "@/components/MapPanel";
 import type { VehicleTrip } from "@/components/TransitMap";
 import { Button } from "@/components/ui/button";
 import { ClockArrowDown, History, RefreshCw, Search } from "lucide-react";
@@ -39,6 +41,8 @@ const EARLIER_MS = 10 * 60_000;
 const CONTROLS_HEIGHT = 124;
 /** Map left between the controls and anything below them. */
 const CONTROLS_CLEARANCE = 8;
+/** The opened trip's column on a wide screen, beside the panel with the same gap. */
+const COLUMN_WIDTH = 392;
 
 type Position = { lat: number; lon: number };
 
@@ -76,6 +80,8 @@ type PlaceRef = string;
 export function CommutePage() {
   const [params, setParams] = useSearchParams();
   const location = useLocation();
+  const desktop = useDesktop();
+  const wide = useWide();
   const navigate = useNavigate();
 
   const savedPlaces = useQuery({
@@ -304,7 +310,9 @@ export function CommutePage() {
     });
     watch.observe(node);
     return () => watch.disconnect();
-  }, []);
+    // Rewatched when the layout changes: the controls are inside the panel on a desktop
+    // and have nothing to publish there, and are back over the map when the window narrows.
+  }, [desktop]);
 
   /**
    * The picker is a history entry, so Back closes it.
@@ -327,15 +335,29 @@ export function CommutePage() {
    */
   const openedId = overlay?.startsWith("trip:") ? overlay.slice("trip:".length) : null;
   const opened = openedId ? (picks.get(openedId) ?? options.find((o) => o.id === openedId) ?? null) : null;
+  /**
+   * On a wide screen the trip opens in a column beside the list, which stays put, so
+   * the next row is one click away. Opening it then swaps the trip in the column rather
+   * than stacking one history entry per row looked at: Back closes the column.
+   */
+  const beside = wide && opened !== null;
+  /** Another trip in the one already open, without a history entry of its own. */
+  const swapTrip = (id: string) =>
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: { overlay: `trip:${id}` } });
   const openTrip = (option: CommuteOption) => {
     select(option);
-    openOverlay(`trip:${option.id}`);
+    // Below 1280 px the row goes away under the pointer, and a leave never comes.
+    setHovered(null);
+    if (beside) swapTrip(option.id);
+    else openOverlay(`trip:${option.id}`);
   };
+  /** A mouse over a row draws that trip faintly on the map, without moving the camera. */
+  const [hovered, setHovered] = useState<CommuteOption | null>(null);
   /** A branch replaces the trip it was opened from, in place, and is drawn at once. */
   const pickBranch = (option: CommuteOption) => {
     setPicks((prev) => new Map(prev).set(option.id, option));
     setSelectedId(option.id);
-    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: { overlay: `trip:${option.id}` } });
+    swapTrip(option.id);
   };
 
   const setSearch = (
@@ -402,6 +424,41 @@ export function CommutePage() {
     });
   };
 
+  /**
+   * The keyboard, on a desktop: / to choose where to, arrows through the trips, Enter to
+   * open one, Escape to close it, R for Uppdatera. Enter on a focused control is that
+   * control's.
+   */
+  useDesktopKeys((event, target) => {
+    if (event.key === "/") {
+      event.preventDefault();
+      openPicker("to");
+    } else if (event.key === "r" || event.key === "R") {
+      if (commute.isFetching) return;
+      if (armed) void commute.refetch();
+      else setArmed(true);
+    } else if (event.key === "Escape" && openedId) {
+      closeOverlay();
+    } else if (event.key === "Enter" && !opened && selected) {
+      if (target?.closest("button, a")) return;
+      event.preventDefault();
+      openTrip(selected);
+    } else if ((event.key === "ArrowDown" || event.key === "ArrowUp") && options.length > 0) {
+      event.preventDefault();
+      const at = options.findIndex((o) => o.id === selected?.id);
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      const next = options[Math.min(options.length - 1, Math.max(0, at + step))]!;
+      select(next);
+      // An open trip follows the selection, in place, rather than becoming one Back step per row.
+      if (opened) swapTrip(next.id);
+      // Focus goes with it, which scrolls the row into view and makes Enter open this
+      // row rather than whichever one was clicked last.
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLElement>('[aria-label="Resor"] [aria-current="true"]')?.focus(),
+      );
+    }
+  });
+
   const fromLabel = useRefLabel(fromRef, saved, positionDenied);
   const toLabel = useRefLabel(toRef, saved, positionDenied);
   /** The destination as the API takes it, for branches. Null until a fix exists, if one is needed. */
@@ -412,198 +469,244 @@ export function CommutePage() {
     ? Math.max(0, Math.round((now - commute.dataUpdatedAt) / 1000))
     : null;
 
-  return (
-    <div ref={root} className="fixed inset-0" style={{ "--map-inset": `${PEEK_HEIGHT}px` } as CSSProperties}>
-      <Suspense fallback={<div className="size-full bg-[var(--color-surface-2)]" />}>
-        <TransitMap
-          option={selected}
-          vehicleTrip={vehicleTrip}
-          topInset={controlsHeight + CONTROLS_CLEARANCE}
-          bottomInset={sheetHeight}
-          className="commute-map relative size-full"
-        />
-      </Suspense>
-
-      {/* Above the map, out of its way: the controls sit in a column that does not take
-          pointer events except where a control actually is. */}
-      <div
-        ref={controls}
-        className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 safe-top"
-      >
-        <TripControl
-          fromLabel={fromLabel}
-          toLabel={toLabel}
-          time={time}
-          onOpen={openPicker}
-          onSwap={swap}
-          trailing={<ModePill modes={modes} onOpen={() => openPicker("modes")} />}
-        />
+  /** The rows and everything around them: the same list in the sheet and in the panel. */
+  const list = (
+    <div className="space-y-2 px-3 pb-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-[var(--color-muted)]">
+          {!armed
+            ? "Inget sökt än"
+            : commute.isError
+              ? "Visar senaste svaret"
+              : updatedSecondsAgo === null
+                ? "Hämtar resor"
+                : `Uppdaterad för ${updatedSecondsAgo} s sedan`}
+        </p>
+        <div className="flex items-center gap-1">
+          {commute.data?.enumerated ? (
+            <span className="text-xs text-[var(--color-muted)]">
+              {options.length} resor
+            </span>
+          ) : null}
+          {/* The only way the list changes: now, from where they are standing now. */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => (armed ? commute.refetch() : setArmed(true))}
+            disabled={commute.isFetching}
+            aria-label="Uppdatera"
+            aria-keyshortcuts={desktop ? "R" : undefined}
+          >
+            <RefreshCw className={cn(commute.isFetching && "animate-spin")} />
+          </Button>
+        </div>
       </div>
 
-      <BottomSheet
-        label="Resor härifrån"
-        topGap={controlsHeight + CONTROLS_CLEARANCE}
-        onHeightChange={trackSheet}
-        onSettle={setSheetHeight}
-      >
-        <div className="space-y-2 px-3 pb-4">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-[var(--color-muted)]">
-              {!armed
-                ? "Inget sökt än"
-                : commute.isError
-                  ? "Visar senaste svaret"
-                  : updatedSecondsAgo === null
-                    ? "Hämtar resor"
-                    : `Uppdaterad för ${updatedSecondsAgo} s sedan`}
-            </p>
-            <div className="flex items-center gap-1">
-              {commute.data?.enumerated ? (
-                <span className="text-xs text-[var(--color-muted)]">
-                  {options.length} resor
-                </span>
-              ) : null}
-              {/* The only way the list changes: now, from where they are standing now. */}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => (armed ? commute.refetch() : setArmed(true))}
-                disabled={commute.isFetching}
-                aria-label="Uppdatera"
-              >
-                <RefreshCw className={cn(commute.isFetching && "animate-spin")} />
-              </Button>
-            </div>
-          </div>
+      {saved.length === 0 && !params.get("to") ? (
+        <div className="space-y-2 py-2">
+          <p className="text-sm">
+            Spara en plats först, så visas resorna dit varje gång du öppnar appen.
+          </p>
+          <Button asChild size="sm">
+            <Link to="/places/new">Spara en plats</Link>
+          </Button>
+        </div>
+      ) : null}
 
-          {saved.length === 0 && !params.get("to") ? (
-            <div className="space-y-2 py-2">
-              <p className="text-sm">
-                Spara en plats först, så visas resorna dit varje gång du öppnar appen.
-              </p>
-              <Button asChild size="sm">
-                <Link to="/places/new">Spara en plats</Link>
-              </Button>
-            </div>
-          ) : null}
+      {sameEnds ? (
+        <p className="py-2 text-sm">
+          Från och till är samma plats. Byt den ena för att se resor.
+        </p>
+      ) : null}
 
-          {sameEnds ? (
-            <p className="py-2 text-sm">
-              Från och till är samma plats. Byt den ena för att se resor.
-            </p>
-          ) : null}
+      {commute.isError ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-[var(--color-danger)] px-3 py-2">
+          <p className="text-sm">
+            {commute.error instanceof ApiError
+              ? commute.error.message
+              : "Kunde inte hämta resor."}
+          </p>
+          <Button variant="secondary" size="sm" onClick={() => commute.refetch()}>
+            Försök igen
+          </Button>
+        </div>
+      ) : null}
 
-          {commute.isError ? (
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-[var(--color-danger)] px-3 py-2">
-              <p className="text-sm">
-                {commute.error instanceof ApiError
-                  ? commute.error.message
-                  : "Kunde inte hämta resor."}
-              </p>
-              <Button variant="secondary" size="sm" onClick={() => commute.refetch()}>
-                Försök igen
-              </Button>
-            </div>
-          ) : null}
+      {!armed && fromRef && toRef && !sameEnds ? (
+        <div className="space-y-3 py-2">
+          <p className="text-[15px]">
+            {fromLabel} till {toLabel}
+            {time ? (time.arriveBy ? `, framme senast ${formatTime(time.when)}` : `, avgång ${formatTime(time.when)}`) : ""}.
+          </p>
+          <Button type="button" size="lg" onClick={() => setArmed(true)} className="w-full rounded-full">
+            <Search />
+            Sök resor
+          </Button>
+        </div>
+      ) : null}
 
-          {!armed && fromRef && toRef && !sameEnds ? (
-            <div className="space-y-3 py-2">
-              <p className="text-[15px]">
-                {fromLabel} till {toLabel}
-                {time ? (time.arriveBy ? `, framme senast ${formatTime(time.when)}` : `, avgång ${formatTime(time.when)}`) : ""}.
-              </p>
-              <Button type="button" size="lg" onClick={() => setArmed(true)} className="w-full rounded-full">
-                <Search />
-                Sök resor
-              </Button>
-            </div>
-          ) : null}
+      {commute.isPending && commute.fetchStatus === "fetching" && options.length === 0 ? (
+        <ul className="space-y-2" aria-busy="true" aria-label="Söker resor">
+          {[0, 1, 2].map((i) => (
+            <li key={i}>
+              <Skeleton className="h-20 w-full" />
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
-          {commute.isPending && commute.fetchStatus === "fetching" && options.length === 0 ? (
-            <ul className="space-y-2" aria-busy="true" aria-label="Söker resor">
-              {[0, 1, 2].map((i) => (
-                <li key={i}>
-                  <Skeleton className="h-20 w-full" />
-                </li>
-              ))}
-            </ul>
-          ) : null}
+      {/* Paging reads down the clock: earlier trips join at the top, later at the
+          bottom, so each button sits where its answer will appear. */}
+      {commute.isSuccess && (!opened || beside) && !time?.arriveBy && options.length > 0 ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={earlier}
+          className="w-full rounded-full"
+        >
+          <History />
+          Tidigare
+        </Button>
+      ) : null}
 
-          {/* Paging reads down the clock: earlier trips join at the top, later at the
-              bottom, so each button sits where its answer will appear. */}
-          {commute.isSuccess && !opened && !time?.arriveBy && options.length > 0 ? (
+      {opened && toApi && !beside ? (
+        <TripView
+          option={opened}
+          destinationName={commute.data?.toLabel ?? commute.data?.to?.name ?? toLabel}
+          to={toApi}
+          now={now}
+          onBack={closeOverlay}
+          onPick={pickBranch}
+        />
+      ) : options.length > 0 ? (
+        <CommuteRows
+          options={options}
+          selectedId={selected?.id ?? null}
+          now={now}
+          onOpen={openTrip}
+          onHover={setHovered}
+        />
+      ) : null}
+
+      {commute.isSuccess && options.length === 0 ? (
+        <p className="py-2 text-sm">
+          {modes.length > 0
+            ? "Ingen resa med de valda färdmedlen. Prova fler färdmedel eller en annan tid."
+            : time?.arriveBy
+              ? "Ingen resa hinner fram i tid. Prova en senare tid eller en annan plats."
+              : "Ingen resa de närmaste timmarna. Prova en annan plats eller planera resan."}
+        </p>
+      ) : null}
+
+      {commute.isSuccess && (!opened || beside) && !time?.arriveBy ? (
+        <div className="flex gap-2">
+          {/* With no rows there is no top for Tidigare to sit above, so the two
+              directions share the one line. */}
+          {options.length === 0 ? (
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={earlier}
-              className="w-full rounded-full"
+              className="flex-1 rounded-full"
             >
               <History />
               Tidigare
             </Button>
           ) : null}
-
-          {opened && toApi ? (
-            <TripView
-              option={opened}
-              destinationName={commute.data?.toLabel ?? commute.data?.to?.name ?? toLabel}
-              to={toApi}
-              now={now}
-              onBack={closeOverlay}
-              onPick={pickBranch}
-            />
-          ) : options.length > 0 ? (
-            <CommuteRows options={options} selectedId={selected?.id ?? null} now={now} onOpen={openTrip} />
-          ) : null}
-
-          {commute.isSuccess && options.length === 0 ? (
-            <p className="py-2 text-sm">
-              {modes.length > 0
-                ? "Ingen resa med de valda färdmedlen. Prova fler färdmedel eller en annan tid."
-                : time?.arriveBy
-                  ? "Ingen resa hinner fram i tid. Prova en senare tid eller en annan plats."
-                  : "Ingen resa de närmaste timmarna. Prova en annan plats eller planera resan."}
-            </p>
-          ) : null}
-
-          {commute.isSuccess && !opened && !time?.arriveBy ? (
-            <div className="flex gap-2">
-              {/* With no rows there is no top for Tidigare to sit above, so the two
-                  directions share the one line. */}
-              {options.length === 0 ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={earlier}
-                  className="flex-1 rounded-full"
-                >
-                  <History />
-                  Tidigare
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={later}
-                className="flex-1 rounded-full"
-              >
-                <ClockArrowDown />
-                Senare
-              </Button>
-            </div>
-          ) : null}
-
-          {commute.data?.notices.map((notice) => (
-            <p key={notice} className="text-xs text-[var(--color-muted)]">
-              {notice}
-            </p>
-          ))}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={later}
+            className="flex-1 rounded-full"
+          >
+            <ClockArrowDown />
+            Senare
+          </Button>
         </div>
-      </BottomSheet>
+      ) : null}
+
+      {commute.data?.notices.map((notice) => (
+        <p key={notice} className="text-xs text-[var(--color-muted)]">
+          {notice}
+        </p>
+      ))}
+    </div>
+  );
+
+  const tripControl = (
+    <TripControl
+      fromLabel={fromLabel}
+      toLabel={toLabel}
+      time={time}
+      onOpen={openPicker}
+      onSwap={swap}
+      trailing={<ModePill modes={modes} onOpen={() => openPicker("modes")} />}
+    />
+  );
+
+  return (
+    <div ref={root} className="fixed inset-y-0 right-0 left-[var(--nav-left)]" style={{ "--map-inset": `${PEEK_HEIGHT}px` } as CSSProperties}>
+      <Suspense fallback={<div className="size-full bg-[var(--color-surface-2)]" />}>
+        <TransitMap
+          option={selected}
+          vehicleTrip={vehicleTrip}
+          preview={desktop && hovered && options.includes(hovered) ? hovered : null}
+          topInset={desktop ? 48 : controlsHeight + CONTROLS_CLEARANCE}
+          bottomInset={desktop ? 0 : sheetHeight}
+          leftInset={desktop ? PANEL_GAP + PANEL_WIDTH + (beside ? PANEL_GAP + COLUMN_WIDTH : 0) : 0}
+          className="commute-map relative size-full"
+        />
+      </Suspense>
+
+      {desktop ? (
+        /* On a desktop the sheet docks to the left as a panel, controls and all: there
+           is room beside the map for the list, so nothing has to slide over it. */
+        <FloatingCard label="Resor härifrån" style={{ left: PANEL_GAP, width: PANEL_WIDTH }}>
+          <div className="shrink-0 p-3 pb-2">{tripControl}</div>
+          <div className="min-h-0 overflow-y-auto">{list}</div>
+        </FloatingCard>
+      ) : (
+        <>
+          {/* Above the map, out of its way: the controls sit in a column that does not take
+              pointer events except where a control actually is. */}
+          <div
+            ref={controls}
+            className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 safe-top sm:right-auto sm:w-[30rem]"
+          >
+            {tripControl}
+          </div>
+
+          <BottomSheet
+            label="Resor härifrån"
+            topGap={controlsHeight + CONTROLS_CLEARANCE}
+            onHeightChange={trackSheet}
+            onSettle={setSheetHeight}
+          >
+            {list}
+          </BottomSheet>
+        </>
+      )}
+
+      {beside && toApi ? (
+        <FloatingCard
+          style={{ left: PANEL_GAP * 2 + PANEL_WIDTH, width: COLUMN_WIDTH }}
+          className="overflow-y-auto p-3 pl-4"
+        >
+          <TripView
+            option={opened}
+            destinationName={commute.data?.toLabel ?? commute.data?.to?.name ?? toLabel}
+            to={toApi}
+            now={now}
+            onBack={closeOverlay}
+            onPick={pickBranch}
+            beside
+          />
+        </FloatingCard>
+      ) : null}
 
       {picker === "time" ? (
         <TimePicker time={time} onPick={setTime} onClose={closePicker} />
@@ -616,6 +719,9 @@ export function CommutePage() {
       {picker === "from" || picker === "to" ? (
         <PlaceSearch
           title={picker === "from" ? "Var börjar du?" : "Vart ska du?"}
+          anchor="ends"
+          /* A desktop has a keyboard out already, and / opens this to be typed into. */
+          focusField={desktop}
           saved={saved}
           /* Live: the screen plans from wherever the phone is when it searches, not
              from the address it was standing at when the place was chosen. */

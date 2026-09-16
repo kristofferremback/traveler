@@ -180,7 +180,7 @@ export function BottomSheet({
       aria-label={label}
       style={{ height }}
       className={cn(
-        "pointer-events-auto fixed inset-x-0 bottom-[calc(3.5rem+max(0.75rem,env(safe-area-inset-bottom,0px))+var(--browser-chrome))] z-20 flex flex-col rounded-t-[var(--radius-sheet)] bg-[var(--color-surface)]/92 shadow-[var(--shadow-sheet)] backdrop-blur-xl",
+        "pointer-events-auto fixed inset-x-0 bottom-[calc(var(--nav-bottom)+var(--browser-chrome))] z-20 sm:right-auto sm:w-[30rem] flex flex-col rounded-t-[var(--radius-sheet)] bg-[var(--color-surface)]/92 shadow-[var(--shadow-sheet)] backdrop-blur-xl",
         !dragging && !reduceMotion && "transition-[height] duration-200",
       )}
     >

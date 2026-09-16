@@ -1,11 +1,13 @@
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Place } from "@traveler/shared";
 import { ChevronLeft, Search } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useOverlay } from "@/lib/overlay";
+import { MapPanel } from "@/components/MapPanel";
 import { PlaceSearch } from "@/components/PlaceSearch";
+import { useDesktop } from "@/hooks/useDesktop";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -16,6 +18,7 @@ import { Input } from "@/components/ui/input";
  * resolves the same place the search offered and the two cannot disagree.
  */
 export function NewPlacePage() {
+  const desktop = useDesktop();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const labelId = useId();
@@ -35,8 +38,14 @@ export function NewPlacePage() {
 
   const ready = label.trim().length > 0 && place !== null;
 
-  return (
-    <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24">
+  /** On a desktop the chosen place is shown where it is, before it is saved. */
+  const pins = useMemo(
+    () => (place ? [{ id: place.id, lat: place.lat, lon: place.lon, label: place.name, named: true }] : []),
+    [place],
+  );
+
+  const content = (
+    <>
       <header className="flex items-center gap-1 pb-1 pt-3 safe-top">
         <Button asChild variant="ghost" size="icon">
           <Link to="/places" aria-label="Tillbaka till platser">
@@ -83,6 +92,7 @@ export function NewPlacePage() {
             type="button"
             aria-labelledby={placeFieldId}
             aria-haspopup="dialog"
+            data-popover-anchor="place"
             onClick={() => openPicker("place")}
             className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-left"
           >
@@ -111,6 +121,7 @@ export function NewPlacePage() {
       {picker === "place" ? (
         <PlaceSearch
           title="Vilken plats?"
+          anchor="place"
           currentPosition="address"
           /* Nothing to offer until something is typed, so the keyboard comes with the
              screen rather than costing a second tap. */
@@ -122,6 +133,16 @@ export function NewPlacePage() {
           onClose={closePicker}
         />
       ) : null}
-    </div>
+    </>
   );
+
+  if (desktop) {
+    return (
+      <MapPanel label="Ny plats" map={{ pins }}>
+        <div className="space-y-4 px-4 pb-4">{content}</div>
+      </MapPanel>
+    );
+  }
+
+  return <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24">{content}</div>;
 }
