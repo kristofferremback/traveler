@@ -24,7 +24,14 @@ export default defineConfig({
   },
   projects: [
     // A phone, because that is where this is used.
-    { name: "mobile", use: { ...devices["Pixel 7"] } },
+    { name: "mobile", use: { ...devices["Pixel 7"] }, testIgnore: /desktop\.spec\.ts/ },
+    // A laptop, for what only exists from 1024 px: the rail, the panel, the popovers.
+    // Everything else is the same code, and the phone run already covers it.
+    {
+      name: "desktop",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
+      testMatch: /desktop\.spec\.ts/,
+    },
   ],
   webServer: {
     /**

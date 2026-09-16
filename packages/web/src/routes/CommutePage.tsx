@@ -413,7 +413,7 @@ export function CommutePage() {
     : null;
 
   return (
-    <div ref={root} className="fixed inset-0" style={{ "--map-inset": `${PEEK_HEIGHT}px` } as CSSProperties}>
+    <div ref={root} className="fixed inset-y-0 right-0 left-[var(--nav-left)]" style={{ "--map-inset": `${PEEK_HEIGHT}px` } as CSSProperties}>
       <Suspense fallback={<div className="size-full bg-[var(--color-surface-2)]" />}>
         <TransitMap
           option={selected}

@@ -119,7 +119,7 @@ export function PlanPage() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-3 pb-24">
+    <div className="mx-auto w-full max-w-2xl px-3 pb-24 lg:pb-8">
       <div className="sticky top-0 z-20 -mx-3 bg-[var(--color-bg)]/95 px-3 pb-3 pt-1 backdrop-blur safe-top">
         <TripControl
           fromLabel={from?.name ?? "Välj plats"}

@@ -16,7 +16,7 @@ export function PlacesPage() {
   const rows = places.data?.places ?? [];
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24">
+    <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24 lg:pb-8">
       <header className="flex items-center justify-between gap-2 pb-1 pt-3 safe-top">
         <h1 className="text-lg font-semibold">Platser</h1>
         <Button asChild size="sm">

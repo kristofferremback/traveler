@@ -32,6 +32,20 @@
   color-scheme: dark;
   /* How much of a fixed box's bottom the browser's own UI covers; see lib/viewport.ts. */
   --browser-chrome: 0px;
+  /*
+   * What the app's own navigation takes from each edge: the tab bar along the bottom on
+   * a phone (3.5rem of links plus its safe-area padding), the rail down the left from
+   * 1024 px. Anything fixed to the screen clears these rather than naming the bar.
+   */
+  --nav-bottom: calc(3.5rem + max(0.75rem, env(safe-area-inset-bottom, 0px)));
+  --nav-left: 0px;
+}
+
+@media (width >= 64rem) {
+  :root {
+    --nav-bottom: 0px;
+    --nav-left: 76px;
+  }
 }
 
 @media (prefers-color-scheme: light) {
@@ -120,10 +134,7 @@
  */
 .commute-map .maplibregl-ctrl-bottom-right,
 .commute-map .maplibregl-ctrl-bottom-left {
-  bottom: calc(
-    3.5rem + max(0.75rem, env(safe-area-inset-bottom, 0px)) + var(--map-inset, 0px) +
-      var(--browser-chrome)
-  );
+  bottom: calc(var(--nav-bottom) + var(--map-inset, 0px) + var(--browser-chrome));
   /* The sheet slides between its heights; a licence that jumps ahead of it looks loose. */
   transition: bottom 200ms;
 }
@@ -139,11 +150,9 @@
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
-/* Floating above the tab bar (3.5rem plus its safe-area padding), like the map controls. */
+/* Floating above the tab bar, like the map controls. */
 @utility above-tabs {
-  bottom: calc(
-    3.5rem + max(0.75rem, env(safe-area-inset-bottom, 0px)) + 0.75rem + var(--browser-chrome)
-  );
+  bottom: calc(var(--nav-bottom) + 0.75rem + var(--browser-chrome));
 }
 
 @utility safe-top {

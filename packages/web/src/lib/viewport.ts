@@ -10,6 +10,17 @@
  * Zero on a desktop and in Chrome, the height of the URL bar in Firefox.
  */
 
+/**
+ * The desktop layout's breakpoint: Tailwind's `lg`, 1024 px, where the tab bar becomes a
+ * rail. Kept in step with `--nav-left` and `--nav-bottom` in index.css.
+ */
+export const DESKTOP_QUERY = "(width >= 64rem)";
+
+/** Whether the desktop layout is the one on screen right now. */
+export function isDesktop(): boolean {
+  return window.matchMedia(DESKTOP_QUERY).matches;
+}
+
 /** Above this, the visible area is small because of pinch zoom, not because of the browser. */
 const ZOOMED = 1.01;
 

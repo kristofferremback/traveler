@@ -88,7 +88,7 @@ export function PlacePage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24">
+    <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24 lg:pb-8">
       <header className="flex items-center gap-1 pb-1 pt-3 safe-top">
         <Button asChild variant="ghost" size="icon">
           <Link to="/places" aria-label="Tillbaka till platser">

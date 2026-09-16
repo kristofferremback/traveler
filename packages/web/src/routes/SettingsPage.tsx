@@ -254,7 +254,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24">
+    <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24 lg:pb-8">
       <header className="pb-1 pt-3 safe-top">
         <h1 className="text-lg font-semibold">Mer</h1>
       </header>

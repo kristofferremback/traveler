@@ -19,7 +19,7 @@ export function DisruptionsPage() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 pb-24">
+    <div className="mx-auto w-full max-w-2xl px-4 pb-24 lg:pb-8">
       <header className="flex items-center justify-between gap-2 pb-3 pt-3 safe-top">
         <h1 className="text-lg font-semibold">Trafikläget</h1>
         <div role="tablist" aria-label="Nivå" className="flex gap-1.5">
