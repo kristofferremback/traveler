@@ -139,6 +139,24 @@
   transition: bottom 200ms;
 }
 
+/*
+ * From 640 px the trip controls stop at 30rem on the left, so zoom and locate go back to
+ * the map's top corner. From 1024 px the list is a panel on the left rather than a sheet
+ * along the bottom, and the licence goes back to the bottom corner with it.
+ */
+@media (width >= 40rem) {
+  .commute-map .maplibregl-ctrl-top-right {
+    top: 0;
+  }
+}
+
+@media (width >= 64rem) {
+  .commute-map .maplibregl-ctrl-bottom-right,
+  .commute-map .maplibregl-ctrl-bottom-left {
+    bottom: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .commute-map .maplibregl-ctrl-bottom-right,
   .commute-map .maplibregl-ctrl-bottom-left {

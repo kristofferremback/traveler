@@ -411,6 +411,7 @@ export function TransitMap({
   vehicleTrip = null,
   topInset = 120,
   bottomInset = 0,
+  leftInset = 0,
   className,
 }: {
   journey?: Journey | null;
@@ -439,6 +440,11 @@ export function TransitMap({
    * one: a drag is a hundred numbers and the camera only reads this when it fits.
    */
   bottomInset?: number;
+  /**
+   * Pixels at the left covered by a panel, as on the desktop layout where the list floats
+   * over the map's left edge. Camera padding like the others, so a trip lands beside it.
+   */
+  leftInset?: number;
   className?: string;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -471,6 +477,8 @@ export function TransitMap({
   insetRef.current = Math.min(bottomInset, Math.round(window.innerHeight * 0.4));
   const topRef = useRef(0);
   topRef.current = topInset;
+  const leftRef = useRef(0);
+  leftRef.current = leftInset;
 
   useEffect(() => {
     if (!container.current || map.current) return;
@@ -618,7 +626,7 @@ export function TransitMap({
         // The sheet covers the bottom of the map and the controls cover the top, so the
         // padding has to keep the trip between them rather than centring it under the
         // rows; the sides leave room for a callout to hang off its stop.
-        padding: { top: topRef.current, bottom: 48 + insetRef.current, left: 40, right: 40 },
+        padding: { top: topRef.current, bottom: 48 + insetRef.current, left: 40 + leftRef.current, right: 40 },
         maxZoom: 15,
         // Respect a reduced-motion preference rather than flying the camera.
         animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -686,7 +694,7 @@ export function TransitMap({
     const bounds = boundsOfNeighbourhood(hood);
     if (bounds) {
       instance.fitBounds(bounds, {
-        padding: { top: 40, bottom: 40 + insetRef.current, left: 28, right: 28 },
+        padding: { top: 40, bottom: 40 + insetRef.current, left: 28 + leftRef.current, right: 28 },
         maxZoom: 15,
         animate: !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       });

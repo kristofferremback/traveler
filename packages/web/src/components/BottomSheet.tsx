@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { isDesktop, onViewportChange, visibleHeight } from "@/lib/viewport";
+import { onViewportChange, visibleHeight } from "@/lib/viewport";
 import { cn } from "@/lib/utils";
 
 /**
@@ -15,15 +15,15 @@ const TUCKED_HEIGHT = 44;
 /**
  * The tab bar under the sheet: 3.5rem of links plus its safe-area padding, which is at
  * least 0.75rem. The sheet's heights are measured from the top of the bar, so the bar
- * has to come off the viewport before the gap does. On a desktop the bar is a rail down
- * the left and takes nothing from the bottom.
+ * has to come off the viewport before the gap does. Only ever on a phone or a tablet: a
+ * desktop has the rail and no sheet.
  */
 const TAB_BAR = 56 + 12;
 
 export type Snap = "tucked" | "peek" | "half" | "full";
 
 function snapHeights(viewport: number, topGap: number): Record<Snap, number> {
-  const usable = viewport - (isDesktop() ? 0 : TAB_BAR);
+  const usable = viewport - TAB_BAR;
   return {
     tucked: TUCKED_HEIGHT,
     peek: PEEK_HEIGHT,
@@ -181,7 +181,7 @@ export function BottomSheet({
       aria-label={label}
       style={{ height }}
       className={cn(
-        "pointer-events-auto fixed right-0 bottom-[calc(var(--nav-bottom)+var(--browser-chrome))] left-[var(--nav-left)] z-20 flex flex-col rounded-t-[var(--radius-sheet)] bg-[var(--color-surface)]/92 shadow-[var(--shadow-sheet)] backdrop-blur-xl",
+        "pointer-events-auto fixed inset-x-0 bottom-[calc(var(--nav-bottom)+var(--browser-chrome))] z-20 sm:right-auto sm:w-[30rem] flex flex-col rounded-t-[var(--radius-sheet)] bg-[var(--color-surface)]/92 shadow-[var(--shadow-sheet)] backdrop-blur-xl",
         !dragging && !reduceMotion && "transition-[height] duration-200",
       )}
     >

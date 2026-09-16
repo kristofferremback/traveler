@@ -16,11 +16,6 @@
  */
 export const DESKTOP_QUERY = "(width >= 64rem)";
 
-/** Whether the desktop layout is the one on screen right now. */
-export function isDesktop(): boolean {
-  return window.matchMedia(DESKTOP_QUERY).matches;
-}
-
 /** Above this, the visible area is small because of pinch zoom, not because of the browser. */
 const ZOOMED = 1.01;
 
