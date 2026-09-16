@@ -382,3 +382,65 @@ test.describe("lists with a place", () => {
     await expect(panel.getByRole("button", { name: "Byt namn" })).toBeVisible();
   });
 });
+
+test.describe("pages with room to spare", () => {
+  test("a stop's departures are a table, like the board on the platform", async ({ page }) => {
+    await page.goto("/stop/9189");
+    const board = page.getByRole("region", { name: /avgångar/i });
+    const table = board.getByRole("table");
+    await expect(table.getByRole("row").nth(1)).toBeVisible({ timeout: 30_000 });
+    for (const column of ["Linje", "Mot", "Läge", "Tid", "Avgår"]) {
+      await expect(table.getByRole("columnheader", { name: column })).toBeVisible();
+    }
+    await expect(board.locator("li")).toHaveCount(0);
+    expect((await table.boundingBox())!.width).toBeGreaterThan(640);
+  });
+
+  test("Trafikläget reads one notice beside the headlines, and the URL says which", async ({ page }) => {
+    await page.goto("/disruptions");
+    await page.getByRole("tab", { name: "Allt" }).click();
+    const list = page.getByRole("list", { name: "Meddelanden" });
+    const rows = list.getByRole("button");
+    await expect(rows.nth(1)).toBeVisible({ timeout: 30_000 });
+    const detail = page.getByRole("region", { name: "Meddelandet" });
+    /** A headline without its severity, which only a screen reader hears. */
+    const heading = async (row: number) =>
+      (await rows.nth(row).locator("span.block").first().textContent())!.replace(/^[^:]+:\s*/, "");
+    const shown = () => detail.getByRole("heading").innerText();
+
+    // Nothing picked yet reads the first, so the pane is never empty.
+    expect(await shown()).toContain((await heading(0)));
+    expect((await detail.boundingBox())!.x).toBeGreaterThan((await list.boundingBox())!.x + 300);
+
+    const entries = await page.evaluate(() => history.length);
+    await rows.nth(1).click();
+    await expect(page).toHaveURL(/[?&]d=\d+/);
+    await expect(rows.nth(1)).toHaveAttribute("aria-current", "true");
+    expect(await shown()).toContain((await heading(1)));
+
+    await page.keyboard.press("ArrowUp");
+    await expect(rows.nth(0)).toHaveAttribute("aria-current", "true");
+    await expect(rows.nth(0)).toBeFocused();
+    expect(await shown()).toContain((await heading(0)));
+    expect(await page.evaluate(() => history.length)).toBe(entries);
+
+    // In the notice itself the keys are for reading it.
+    await detail.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(rows.nth(0)).toHaveAttribute("aria-current", "true");
+
+    await page.goto("/disruptions?d=1");
+    await expect(detail).toContainText("gäller inte längre");
+  });
+
+  test("Mer puts what you set up once in a second column", async ({ page }) => {
+    await page.goto("/settings");
+    const title = (name: string) => page.getByText(name, { exact: true }).first();
+    await expect(title("API-nycklar")).toBeVisible();
+    const account = (await title("Konto").boundingBox())!;
+    const invite = (await title("Bjud in").boundingBox())!;
+    const places = (await page.getByRole("link", { name: "Platser" }).last().boundingBox())!;
+    expect(invite.x).toBeGreaterThan(account.x + 300);
+    expect(Math.abs(invite.y - places.y)).toBeLessThan(40);
+  });
+});

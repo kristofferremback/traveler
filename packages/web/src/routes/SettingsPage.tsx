@@ -254,7 +254,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24 lg:pb-8">
+    <div className="mx-auto w-full max-w-2xl space-y-4 px-4 pb-24 lg:max-w-5xl lg:pb-8">
       <header className="pb-1 pt-3 safe-top">
         <h1 className="text-lg font-semibold">Mer</h1>
       </header>
@@ -265,124 +265,131 @@ export function SettingsPage() {
         </p>
       ) : null}
 
-      <Card>
-        <CardContent className="p-0">
-          <Link
-            to="/places"
-            className="flex min-h-14 items-center justify-between gap-2 p-4"
-          >
-            <span className="text-sm font-semibold">Platser</span>
-            <ChevronRight className="size-4 text-[var(--color-muted)]" aria-hidden />
-          </Link>
-        </CardContent>
-      </Card>
+      {/* Two columns on a desktop: what you change often on the left, what you set up once
+          on the right. The phone reads them in the same order, one after the other. */}
+      <div className="space-y-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4 lg:space-y-0">
+        <div className="space-y-4">
+        <Card>
+          <CardContent className="p-0">
+            <Link
+              to="/places"
+              className="flex min-h-14 items-center justify-between gap-2 p-4"
+            >
+              <span className="text-sm font-semibold">Platser</span>
+              <ChevronRight className="size-4 text-[var(--color-muted)]" aria-hidden />
+            </Link>
+          </CardContent>
+        </Card>
 
-      <WalkSettingsCard />
+        <WalkSettingsCard />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Konto</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {me.isPending ? (
-            <Skeleton className="h-5 w-48" />
-          ) : (
-            <p className="text-sm text-[var(--color-muted)]">{me.data?.user.email}</p>
-          )}
-          <Button variant="outline" onClick={logOut}>
-            Logga ut
-          </Button>
-        </CardContent>
-      </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Konto</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {me.isPending ? (
+              <Skeleton className="h-5 w-48" />
+            ) : (
+              <p className="text-sm text-[var(--color-muted)]">{me.data?.user.email}</p>
+            )}
+            <Button variant="outline" onClick={logOut}>
+              Logga ut
+            </Button>
+          </CardContent>
+        </Card>
+        </div>
+        <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Bjud in</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-[var(--color-muted)]">
+              Länken fungerar en gång och i sju dagar. Inget mejl skickas, så du får skicka
+              den vidare själv.
+            </p>
+            <Input
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="namn@exempel.se"
+              aria-label="E-postadress"
+            />
+            <Input
+              value={inviteName}
+              onChange={(e) => setInviteName(e.target.value)}
+              placeholder="Namn (valfritt)"
+              aria-label="Namn"
+            />
+            <Button
+              onClick={() => createInvite.mutate()}
+              disabled={!inviteEmail.trim() || createInvite.isPending}
+            >
+              {createInvite.isPending ? "Skapar…" : "Skapa inbjudan"}
+            </Button>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Bjud in</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-[var(--color-muted)]">
-            Länken fungerar en gång och i sju dagar. Inget mejl skickas, så du får skicka
-            den vidare själv.
-          </p>
-          <Input
-            type="email"
-            value={inviteEmail}
-            onChange={(e) => setInviteEmail(e.target.value)}
-            placeholder="namn@exempel.se"
-            aria-label="E-postadress"
-          />
-          <Input
-            value={inviteName}
-            onChange={(e) => setInviteName(e.target.value)}
-            placeholder="Namn (valfritt)"
-            aria-label="Namn"
-          />
-          <Button
-            onClick={() => createInvite.mutate()}
-            disabled={!inviteEmail.trim() || createInvite.isPending}
-          >
-            {createInvite.isPending ? "Skapar…" : "Skapa inbjudan"}
-          </Button>
+            {invite ? (
+              <div className="space-y-3 pt-1">
+                <CopyField label="Inbjudningslänk" value={invite.url} />
+                <InviteQr url={invite.url} />
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
 
-          {invite ? (
-            <div className="space-y-3 pt-1">
-              <CopyField label="Inbjudningslänk" value={invite.url} />
-              <InviteQr url={invite.url} />
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>API-nycklar</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-[var(--color-muted)]">
-            För program som läser Traveler åt dig:{" "}
-            <code className="break-all">curl -H "x-api-key: …" {window.location.origin}/api/commute?…</code>
-          </p>
-          {me.isPending ? (
-            <Skeleton className="h-5 w-full" />
-          ) : me.data?.apiKeys.length ? (
-            <ul className="divide-y divide-[var(--color-border)]">
-              {me.data.apiKeys.map((key) => (
-                <li key={key.id} className="flex items-center justify-between gap-2 py-2">
-                  <span className="text-sm">
-                    {key.name ?? "Utan namn"}
-                    <span className="block text-xs text-[var(--color-muted)]">
-                      {key.start ? `${key.start}… · ` : ""}skapad {formatDate(key.createdAt)} ·{" "}
-                      {key.lastRequest ? `senast använd ${formatDate(key.lastRequest)}` : "aldrig använd"}
+        <Card>
+          <CardHeader>
+            <CardTitle>API-nycklar</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-[var(--color-muted)]">
+              För program som läser Traveler åt dig:{" "}
+              <code className="break-all">curl -H "x-api-key: …" {window.location.origin}/api/commute?…</code>
+            </p>
+            {me.isPending ? (
+              <Skeleton className="h-5 w-full" />
+            ) : me.data?.apiKeys.length ? (
+              <ul className="divide-y divide-[var(--color-border)]">
+                {me.data.apiKeys.map((key) => (
+                  <li key={key.id} className="flex items-center justify-between gap-2 py-2">
+                    <span className="text-sm">
+                      {key.name ?? "Utan namn"}
+                      <span className="block text-xs text-[var(--color-muted)]">
+                        {key.start ? `${key.start}… · ` : ""}skapad {formatDate(key.createdAt)} ·{" "}
+                        {key.lastRequest ? `senast använd ${formatDate(key.lastRequest)}` : "aldrig använd"}
+                      </span>
                     </span>
-                  </span>
-                  <Button variant="ghost" size="sm" onClick={() => removeKey(key.id, key.name)}>
-                    Ta bort
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-[var(--color-muted)]">Inga nycklar än.</p>
-          )}
+                    <Button variant="ghost" size="sm" onClick={() => removeKey(key.id, key.name)}>
+                      Ta bort
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-[var(--color-muted)]">Inga nycklar än.</p>
+            )}
 
-          <Input
-            value={keyName}
-            onChange={(e) => setKeyName(e.target.value)}
-            placeholder="Vad ska nyckeln användas till?"
-            aria-label="Namn på nyckeln"
-          />
-          <Button onClick={() => createKey.mutate()} disabled={createKey.isPending}>
-            {createKey.isPending ? "Skapar…" : "Skapa nyckel"}
-          </Button>
+            <Input
+              value={keyName}
+              onChange={(e) => setKeyName(e.target.value)}
+              placeholder="Vad ska nyckeln användas till?"
+              aria-label="Namn på nyckeln"
+            />
+            <Button onClick={() => createKey.mutate()} disabled={createKey.isPending}>
+              {createKey.isPending ? "Skapar…" : "Skapa nyckel"}
+            </Button>
 
-          {freshKey ? (
-            <div className="space-y-2 pt-1">
-              <p className="text-sm">Kopiera nyckeln nu. Den visas inte igen.</p>
-              <CopyField label="API-nyckel" value={freshKey} />
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+            {freshKey ? (
+              <div className="space-y-2 pt-1">
+                <p className="text-sm">Kopiera nyckeln nu. Den visas inte igen.</p>
+                <CopyField label="API-nyckel" value={freshKey} />
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+        </div>
+      </div>
     </div>
   );
 }
