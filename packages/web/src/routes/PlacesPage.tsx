@@ -8,8 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MapPanel } from "@/components/MapPanel";
 import { useDesktop } from "@/hooks/useDesktop";
-
-/** Only on a desktop, where "is that the right spot?" can be answered beside the list. */
+import { cn } from "@/lib/utils";
 
 /** The places you keep, in the order you put them in. */
 export function PlacesPage() {
@@ -28,6 +27,7 @@ export function PlacesPage() {
         lat: place.lat,
         lon: place.lon,
         label: place.label,
+        named: true,
       })),
     [places.data],
   );
@@ -69,7 +69,8 @@ export function PlacesPage() {
         </p>
       ) : null}
 
-      <ul className="space-y-2">
+      {/* In the desktop panel the rows divide one card rather than stacking cards in it. */}
+      <ul className={desktop ? "-mx-4 divide-y divide-[var(--color-border)]" : "space-y-2"}>
         {rows.map((place) => {
           const Icon = KIND_ICON[place.kind];
           return (
@@ -78,7 +79,12 @@ export function PlacesPage() {
                 to={`/places/${place.id}`}
                 onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(String(place.id))}
                 onPointerLeave={(e) => e.pointerType === "mouse" && setHovered(null)}
-                className="flex min-h-14 items-center gap-3 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+                className={cn(
+                  "flex min-h-14 items-center gap-3",
+                  desktop
+                    ? "px-4 py-3 hover:bg-[var(--color-surface-2)]"
+                    : "rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3",
+                )}
               >
                 <Icon className="size-5 shrink-0 text-[var(--color-muted)]" aria-hidden />
                 <span className="min-w-0 flex-1">
@@ -98,10 +104,7 @@ export function PlacesPage() {
 
   if (desktop) {
     return (
-      <MapPanel
-        label="Platser"
-        map={{ pins, highlight: hovered }}
-      >
+      <MapPanel label="Platser" map={{ pins, highlight: hovered }}>
         <div className="space-y-4 px-4 pb-4">{content}</div>
       </MapPanel>
     );

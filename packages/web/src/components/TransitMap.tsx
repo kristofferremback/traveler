@@ -260,17 +260,20 @@ function minuteLabel(seconds: number): HTMLElement {
 
 /**
  * A place on a list, shown where it is: a dot in the mode's colour, and its name beside
- * it while its row is under the pointer. Not a control: the row is, at a size a finger
- * can hit, and a second way in the size of a dot would only be a worse one.
+ * it while its row is under the pointer, or always for a pin that is `named`. Not a
+ * control: the row is, at a size a finger can hit, and a second way in the size of a dot
+ * would only be a worse one.
  */
 function pinElement(pin: MapPin, highlighted: boolean): HTMLElement {
+  const labelled = highlighted || pin.named;
   const el = document.createElement("span");
   el.setAttribute("aria-hidden", "true");
   el.className = cn(
     "flex items-center gap-1.5 rounded-full",
-    highlighted
-      ? "z-10 bg-[var(--color-surface)] py-1 pr-2.5 pl-1 text-xs font-semibold text-[var(--color-fg)] shadow-[var(--shadow-float)]"
+    labelled
+      ? "bg-[var(--color-surface)] py-1 pr-2.5 pl-1 text-xs font-semibold text-[var(--color-fg)] shadow-[var(--shadow-float)]"
       : "p-1",
+    highlighted && "z-10",
   );
   const dot = document.createElement("span");
   dot.className = cn(
@@ -279,7 +282,7 @@ function pinElement(pin: MapPin, highlighted: boolean): HTMLElement {
   );
   dot.style.backgroundColor = pin.color ?? "var(--color-accent)";
   el.append(dot);
-  if (highlighted) el.append(pin.label);
+  if (labelled) el.append(pin.label);
   return el;
 }
 
@@ -463,7 +466,15 @@ function doorsOf(option: CommuteOption | null): {
 }
 
 /** One thing from a list beside the map, placed on it. */
-type MapPin = { id: string; lat: number; lon: number; label: string; color?: string };
+type MapPin = {
+  id: string;
+  lat: number;
+  lon: number;
+  label: string;
+  color?: string;
+  /** Named on the map without a pointer over its row, for a list short enough to label. */
+  named?: boolean;
+};
 
 export function TransitMap({
   journey,
@@ -800,8 +811,9 @@ export function TransitMap({
     for (const pin of pins ?? []) {
       const lit = pin.id === highlight;
       const element = pinElement(pin, lit);
+      const labelled = lit || pin.named;
       pinMarkers.current.push(
-        new maplibregl.Marker({ element, anchor: lit ? "left" : "center", offset: lit ? [-12, 0] : [0, 0] })
+        new maplibregl.Marker({ element, anchor: labelled ? "left" : "center", offset: labelled ? [-12, 0] : [0, 0] })
           .setLngLat([pin.lon, pin.lat])
           .addTo(instance),
       );

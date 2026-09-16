@@ -6,13 +6,11 @@ import { api } from "@/lib/api";
 import { formatDistance } from "@/lib/format";
 import { ModeChips } from "@/components/LineBadge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MapPanel } from "@/components/MapPanel";
 import { useDesktop } from "@/hooks/useDesktop";
 import { modeColor } from "@/lib/modes";
-
-/** Only on a desktop, where the stops are shown where they are. The phone keeps the list. */
+import { cn } from "@/lib/utils";
 
 type Position = { lat: number; lon: number };
 
@@ -113,30 +111,34 @@ export function NearbyPage() {
         </p>
       ) : null}
 
-      <ul className="space-y-2">
+      {/* In the desktop panel the rows divide one card rather than stacking cards in it. */}
+      <ul className={desktop ? "-mx-4 divide-y divide-[var(--color-border)]" : "space-y-2"}>
         {stops.data?.places.map((place) => (
           <li key={place.id}>
-            <Card>
-              <Link
-                to={`/stop/${place.siteId}`}
-                onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(String(place.siteId))}
-                onPointerLeave={(e) => e.pointerType === "mouse" && setHovered(null)}
-                className="flex min-h-16 items-center gap-3 p-4"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{place.name}</span>
-                  {place.locality ? (
-                    <span className="block truncate text-xs text-[var(--color-muted)]">
-                      {place.locality}
-                    </span>
-                  ) : null}
-                </span>
-                <ModeChips modes={place.modes} />
-                <span className="text-xs tabular-nums text-[var(--color-muted)]">
-                  {formatDistance(place.distanceMetres)}
-                </span>
-              </Link>
-            </Card>
+            <Link
+              to={`/stop/${place.siteId}`}
+              onPointerEnter={(e) => e.pointerType === "mouse" && setHovered(String(place.siteId))}
+              onPointerLeave={(e) => e.pointerType === "mouse" && setHovered(null)}
+              className={cn(
+                "flex items-center gap-3",
+                desktop
+                  ? "min-h-14 px-4 py-2.5 hover:bg-[var(--color-surface-2)]"
+                  : "min-h-16 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4",
+              )}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{place.name}</span>
+                {place.locality ? (
+                  <span className="block truncate text-xs text-[var(--color-muted)]">
+                    {place.locality}
+                  </span>
+                ) : null}
+              </span>
+              <ModeChips modes={place.modes} />
+              <span className="text-xs tabular-nums text-[var(--color-muted)]">
+                {formatDistance(place.distanceMetres)}
+              </span>
+            </Link>
           </li>
         ))}
       </ul>
@@ -145,10 +147,7 @@ export function NearbyPage() {
 
   if (desktop) {
     return (
-      <MapPanel
-        label="Hållplatser nära dig"
-        map={{ pins, here: position, highlight: hovered }}
-      >
+      <MapPanel label="Hållplatser nära dig" map={{ pins, here: position, highlight: hovered }}>
         <div className="px-4 pb-4">{content}</div>
       </MapPanel>
     );
