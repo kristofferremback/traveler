@@ -5,6 +5,7 @@ import type { Place } from "@traveler/shared";
 import { Map as MapIcon } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useOverlay } from "@/lib/overlay";
+import { useDesktop } from "@/hooks/useDesktop";
 import { parseModes } from "@/lib/modes";
 import { PlaceSearch, type PlaceChoice } from "@/components/PlaceSearch";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
@@ -18,6 +19,10 @@ import { Skeleton } from "@/components/ui/skeleton";
  * MapLibre and the pmtiles reader are about a megabyte, and most searches are answered
  * by reading the times off the first card. The map loads when it is asked for.
  */
+/** The panel's width and its gap from the rail, the same as the commute screen's. */
+const PANEL_WIDTH = 408;
+const PANEL_GAP = 12;
+
 const TransitMap = lazy(() =>
   import("@/components/TransitMap").then((m) => ({ default: m.TransitMap })),
 );
@@ -31,9 +36,13 @@ const TransitMap = lazy(() =>
  *
  * The whole query lives in the URL, so a planned trip is a link. Back and forward move
  * through searches the way they move through pages, and reloading keeps the result.
+ *
+ * On a desktop it is laid out like the commute screen: the controls and the journeys in
+ * a panel over a map that is always there, drawing the selected journey.
  */
 export function PlanPage() {
   const [params, setParams] = useSearchParams();
+  const desktop = useDesktop();
   const [showMap, setShowMap] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -118,46 +127,38 @@ export function PlanPage() {
     [journeys, selected],
   );
 
-  return (
-    <div className="mx-auto w-full max-w-2xl px-3 pb-24 lg:pb-8">
-      <div className="sticky top-0 z-20 -mx-3 bg-[var(--color-bg)]/95 px-3 pb-3 pt-1 backdrop-blur safe-top">
-        <TripControl
-          fromLabel={from?.name ?? "Välj plats"}
-          toLabel={to?.name ?? "Välj plats"}
-          time={time}
-          onOpen={openPicker}
-          onSwap={swap}
-          trailing={
-            <>
-              <ModePill modes={modes} onOpen={() => openPicker("modes")} />
-              {journeys.length > 0 ? (
-                <Button
-                  type="button"
-                  variant={showMap ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setShowMap((v) => !v)}
-                  aria-pressed={showMap}
-                  className="rounded-full"
-                >
-                  <MapIcon />
-                  Karta
-                </Button>
-              ) : null}
-            </>
-          }
-        />
-      </div>
+  const tripControl = (
+    <TripControl
+      fromLabel={from?.name ?? "Välj plats"}
+      toLabel={to?.name ?? "Välj plats"}
+      time={time}
+      onOpen={openPicker}
+      onSwap={swap}
+      trailing={
+        <>
+          <ModePill modes={modes} onOpen={() => openPicker("modes")} />
+          {journeys.length > 0 && !desktop ? (
+            <Button
+              type="button"
+              variant={showMap ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowMap((v) => !v)}
+              aria-pressed={showMap}
+              className="rounded-full"
+            >
+              <MapIcon />
+              Karta
+            </Button>
+          ) : null}
+        </>
+      }
+    />
+  );
 
-      {showMap && selectedJourney ? (
-        <div className="relative mb-3 h-64 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)]">
-          <Suspense fallback={<Skeleton className="size-full rounded-none" />}>
-            <TransitMap journey={selectedJourney} className="relative size-full" />
-          </Suspense>
-        </div>
-      ) : null}
-
+  const answers = (
+    <>
       {!fromId || !toId ? (
-        <p className="mt-8 text-center text-sm text-[var(--color-muted)]">
+        <p className="mt-8 text-center text-sm text-[var(--color-muted)] lg:my-2">
           Välj var du börjar och var du ska.
         </p>
       ) : null}
@@ -210,7 +211,11 @@ export function PlanPage() {
           {notice}
         </p>
       ))}
+    </>
+  );
 
+  const pickers = (
+    <>
       {picker === "time" ? (
         <TimePicker
           time={time}
@@ -233,6 +238,7 @@ export function PlanPage() {
         <PlaceSearch
           title={picker === "from" ? "Var börjar du?" : "Vart ska du?"}
           anchor="ends"
+          focusField={desktop}
           saved={saved}
           /* An address rather than the live ref the commute screen keeps: this screen
              plans one trip from one point, and the URL has to name it. */
@@ -241,6 +247,51 @@ export function PlanPage() {
           onClose={closePicker}
         />
       ) : null}
+    </>
+  );
+
+  if (desktop) {
+    return (
+      <div className="fixed inset-y-0 right-0 left-[var(--nav-left)]">
+        <Suspense fallback={<div className="size-full bg-[var(--color-surface-2)]" />}>
+          <TransitMap
+            journey={selectedJourney}
+            topInset={48}
+            bottomInset={0}
+            leftInset={PANEL_GAP + PANEL_WIDTH}
+            className="relative size-full"
+          />
+        </Suspense>
+        <section
+          aria-label="Valfri resa"
+          className="pointer-events-none absolute top-3 bottom-3 left-3 z-20 flex w-[408px] flex-col"
+        >
+          <div className="pointer-events-auto flex max-h-full flex-col rounded-[var(--radius-sheet)] bg-[var(--color-surface)]/92 shadow-[var(--shadow-float)] backdrop-blur-xl">
+            <div className="shrink-0 p-3">{tripControl}</div>
+            <div className="min-h-0 space-y-2 overflow-y-auto px-3 pb-3">{answers}</div>
+          </div>
+        </section>
+        {pickers}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-2xl px-3 pb-24">
+      <div className="sticky top-0 z-20 -mx-3 bg-[var(--color-bg)]/95 px-3 pb-3 pt-1 backdrop-blur safe-top">
+        {tripControl}
+      </div>
+
+      {showMap && selectedJourney ? (
+        <div className="relative mb-3 h-64 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)]">
+          <Suspense fallback={<Skeleton className="size-full rounded-none" />}>
+            <TransitMap journey={selectedJourney} className="relative size-full" />
+          </Suspense>
+        </div>
+      ) : null}
+
+      {answers}
+      {pickers}
     </div>
   );
 }

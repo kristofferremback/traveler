@@ -311,3 +311,27 @@ test.describe("pickers", () => {
     await expect(picker.getByRole("checkbox").first()).toBeChecked({ checked: !was });
   });
 });
+
+test.describe("planning any trip", () => {
+  const plan = "/plan?from=9091001000009189&to=9091001000009001";
+  const planPanel = (page: Page) => page.getByRole("region", { name: "Valfri resa" });
+
+  test("uses the commute screen's layout, with the map always there instead of a Karta button", async ({ page }) => {
+    await page.goto(plan);
+    const cards = planPanel(page).locator("ul > li").filter({ hasText: "→" });
+    await expect(cards.first()).toBeVisible({ timeout: 30_000 });
+
+    const box = (await planPanel(page).boundingBox())!;
+    expect(box.x).toBe(88);
+    expect(box.width).toBe(408);
+    await expect(planPanel(page).getByRole("button", { name: /^Från/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Karta" })).toHaveCount(0);
+    await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+    expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
+
+    // Choosing a journey still expands it in the panel.
+    const toggle = cards.first().getByRole("button").first();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
+});
