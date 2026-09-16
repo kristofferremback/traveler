@@ -6,7 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import { formatDistance } from "@/lib/format";
 import { KIND_ICON, KIND_LABEL, hoodStopKey } from "@/lib/savedPlaces";
 import { LineBadge } from "@/components/LineBadge";
-import { MapPanel, PANEL_GAP, PANEL_WIDTH } from "@/components/MapPanel";
+import { MapPanel } from "@/components/MapPanel";
 import { useDesktop } from "@/hooks/useDesktop";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,14 +92,7 @@ export function PlacePage() {
     rename.mutate(next);
   }
 
-  const map = (
-    <TransitMap
-      neighbourhood={hood.data ?? null}
-      highlight={hovered}
-      leftInset={desktop ? PANEL_GAP + PANEL_WIDTH : 0}
-      className="relative size-full"
-    />
-  );
+  const map = { neighbourhood: hood.data ?? null, highlight: hovered };
 
   const content = (
     <>
@@ -204,7 +197,9 @@ export function PlacePage() {
 
           {desktop ? null : (
             <div className="relative h-64 overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)]">
-              <Suspense fallback={<Skeleton className="size-full rounded-none" />}>{map}</Suspense>
+              <Suspense fallback={<Skeleton className="size-full rounded-none" />}>
+                <TransitMap {...map} className="relative size-full" />
+              </Suspense>
             </div>
           )}
 

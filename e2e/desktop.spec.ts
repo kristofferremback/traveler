@@ -12,6 +12,7 @@ test.beforeEach(async ({ context, request }) => {
 
 const nav = (page: Page) => page.getByRole("navigation", { name: "Huvudmeny" });
 const panel = (page: Page) => page.getByRole("region", { name: "Resor härifrån" });
+const SLUSSEN = "9091001000009192";
 const tripEnd = (page: Page, end: "Från" | "Till") =>
   page.getByRole("button", { name: new RegExp(`^${end}`) });
 
@@ -86,7 +87,6 @@ test("every target clears 44 px", async ({ page }) => {
 
 test.describe("the commute panel", () => {
   const JARLABERG = "9091001000004030";
-  const SLUSSEN = "9091001000009192";
   let trip = "";
 
   test.beforeEach(async ({ request }) => {
@@ -337,7 +337,6 @@ test.describe("planning any trip", () => {
 });
 
 test.describe("lists with a place", () => {
-  const SLUSSEN = "9091001000009192";
   const markerNamed = (page: Page, name: string | RegExp) =>
     page.locator(".maplibregl-marker").filter({ hasText: name });
 
@@ -406,22 +405,22 @@ test.describe("pages with room to spare", () => {
     /** A headline without its severity, which only a screen reader hears. */
     const heading = async (row: number) =>
       (await rows.nth(row).locator("span.block").first().textContent())!.replace(/^[^:]+:\s*/, "");
-    const shown = () => detail.getByRole("heading").innerText();
+    const shown = () => detail.getByRole("heading");
 
     // Nothing picked yet reads the first, so the pane is never empty.
-    expect(await shown()).toContain((await heading(0)));
+    await expect(shown()).toContainText(await heading(0));
     expect((await detail.boundingBox())!.x).toBeGreaterThan((await list.boundingBox())!.x + 300);
 
     const entries = await page.evaluate(() => history.length);
     await rows.nth(1).click();
     await expect(page).toHaveURL(/[?&]d=\d+/);
     await expect(rows.nth(1)).toHaveAttribute("aria-current", "true");
-    expect(await shown()).toContain((await heading(1)));
+    await expect(shown()).toContainText(await heading(1));
 
     await page.keyboard.press("ArrowUp");
     await expect(rows.nth(0)).toHaveAttribute("aria-current", "true");
     await expect(rows.nth(0)).toBeFocused();
-    expect(await shown()).toContain((await heading(0)));
+    await expect(shown()).toContainText(await heading(0));
     expect(await page.evaluate(() => history.length)).toBe(entries);
 
     // In the notice itself the keys are for reading it.
@@ -429,7 +428,16 @@ test.describe("pages with room to spare", () => {
     await page.keyboard.press("ArrowDown");
     await expect(rows.nth(0)).toHaveAttribute("aria-current", "true");
 
-    await page.goto("/disruptions?d=1");
+    // A key that goes nowhere, at the top, leaves nothing behind to take focus later.
+    await rows.nth(0).focus();
+    await page.keyboard.press("ArrowUp");
+    const level = page.getByRole("tab", { name: "Störningar" });
+    await level.click();
+    await page.waitForTimeout(1000);
+    await expect(level).toBeFocused();
+
+    // An id no notice has, like one the stream has dropped since the link was made.
+    await page.goto("/disruptions?d=999999999");
     await expect(detail).toContainText("gäller inte längre");
   });
 

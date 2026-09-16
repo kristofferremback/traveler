@@ -1,4 +1,4 @@
-import { lazy, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Plus } from "lucide-react";
@@ -6,13 +6,10 @@ import { api, ApiError } from "@/lib/api";
 import { KIND_ICON, KIND_LABEL } from "@/lib/savedPlaces";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MapPanel, PANEL_GAP, PANEL_WIDTH } from "@/components/MapPanel";
+import { MapPanel } from "@/components/MapPanel";
 import { useDesktop } from "@/hooks/useDesktop";
 
 /** Only on a desktop, where "is that the right spot?" can be answered beside the list. */
-const TransitMap = lazy(() =>
-  import("@/components/TransitMap").then((m) => ({ default: m.TransitMap })),
-);
 
 /** The places you keep, in the order you put them in. */
 export function PlacesPage() {
@@ -103,14 +100,7 @@ export function PlacesPage() {
     return (
       <MapPanel
         label="Platser"
-        map={
-          <TransitMap
-            pins={pins}
-            highlight={hovered}
-            leftInset={PANEL_GAP + PANEL_WIDTH}
-            className="relative size-full"
-          />
-        }
+        map={{ pins, highlight: hovered }}
       >
         <div className="space-y-4 px-4 pb-4">{content}</div>
       </MapPanel>

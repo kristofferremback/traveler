@@ -463,7 +463,7 @@ function doorsOf(option: CommuteOption | null): {
 }
 
 /** One thing from a list beside the map, placed on it. */
-export type MapPin = { id: string; lat: number; lon: number; label: string; color?: string };
+type MapPin = { id: string; lat: number; lon: number; label: string; color?: string };
 
 export function TransitMap({
   journey,

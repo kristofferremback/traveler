@@ -1,4 +1,4 @@
-import { lazy, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { LocateFixed, Loader2 } from "lucide-react";
@@ -8,14 +8,11 @@ import { ModeChips } from "@/components/LineBadge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MapPanel, PANEL_GAP, PANEL_WIDTH } from "@/components/MapPanel";
+import { MapPanel } from "@/components/MapPanel";
 import { useDesktop } from "@/hooks/useDesktop";
 import { modeColor } from "@/lib/modes";
 
 /** Only on a desktop, where the stops are shown where they are. The phone keeps the list. */
-const TransitMap = lazy(() =>
-  import("@/components/TransitMap").then((m) => ({ default: m.TransitMap })),
-);
 
 type Position = { lat: number; lon: number };
 
@@ -80,7 +77,7 @@ export function NearbyPage() {
         lon: place.lon,
         label: place.name,
         color: place.modes[0] ? modeColor(place.modes[0]) : undefined,
-      })),
+      })) ?? [],
     [stops.data],
   );
 
@@ -150,15 +147,7 @@ export function NearbyPage() {
     return (
       <MapPanel
         label="Hållplatser nära dig"
-        map={
-          <TransitMap
-            pins={pins ?? []}
-            here={position}
-            highlight={hovered}
-            leftInset={PANEL_GAP + PANEL_WIDTH}
-            className="relative size-full"
-          />
-        }
+        map={{ pins, here: position, highlight: hovered }}
       >
         <div className="px-4 pb-4">{content}</div>
       </MapPanel>

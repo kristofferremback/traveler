@@ -19,11 +19,13 @@ const EDGE = 12;
  * outside it closes it, the way a popover does.
  */
 export function usePopover(
-  anchor: string | undefined,
+  anchor: string,
   minWidth: number,
   onClose: () => void,
 ): {
   anchored: boolean;
+  /** A popover floats over the map with it still showing, instead of dimming it. */
+  className: string | undefined;
   style: CSSProperties | undefined;
   onClick: (e: MouseEvent<HTMLDialogElement>) => void;
 } {
@@ -32,7 +34,7 @@ export function usePopover(
 
   // Before paint, so the dialog never shows in the middle first.
   useLayoutEffect(() => {
-    if (!desktop || !anchor) {
+    if (!desktop) {
       setRect(null);
       return;
     }
@@ -42,12 +44,13 @@ export function usePopover(
     return onViewportChange(measure);
   }, [desktop, anchor]);
 
-  if (!rect) return { anchored: false, style: undefined, onClick: () => {} };
+  if (!rect) return { anchored: false, className: undefined, style: undefined, onClick: () => {} };
 
   const width = Math.max(minWidth, rect.width);
   const top = rect.bottom + GAP;
   return {
     anchored: true,
+    className: "shadow-[var(--shadow-float)] backdrop:bg-transparent",
     style: {
       position: "fixed",
       inset: "auto",

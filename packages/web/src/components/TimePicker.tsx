@@ -95,7 +95,7 @@ export function TimePicker({
       onClick={popover.onClick}
       className={cn(
         "m-0 mt-auto w-full max-w-none rounded-t-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg)] backdrop:bg-black/50 sm:mx-auto sm:mb-auto sm:mt-[10dvh] sm:max-w-md sm:rounded-[var(--radius-card)]",
-        popover.anchored && "shadow-[var(--shadow-float)] backdrop:bg-transparent",
+        popover.className,
       )}
     >
       <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-2">

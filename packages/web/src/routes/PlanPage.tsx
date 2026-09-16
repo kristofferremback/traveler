@@ -11,7 +11,7 @@ import { PlaceSearch, type PlaceChoice } from "@/components/PlaceSearch";
 import { TimePicker, type PlanTime } from "@/components/TimePicker";
 import { ModePicker, ModePill } from "@/components/ModePicker";
 import { TripControl } from "@/components/TripControl";
-import { MapPanel, PANEL_GAP, PANEL_WIDTH } from "@/components/MapPanel";
+import { MapPanel } from "@/components/MapPanel";
 import { JourneyCard } from "@/components/JourneyCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -252,14 +252,7 @@ export function PlanPage() {
       <>
         <MapPanel
           label="Valfri resa"
-          map={
-            <TransitMap
-              journey={selectedJourney}
-              topInset={48}
-              leftInset={PANEL_GAP + PANEL_WIDTH}
-              className="relative size-full"
-            />
-          }
+          map={{ journey: selectedJourney, topInset: 48 }}
         >
           <div className="sticky top-0 z-10 bg-[var(--color-surface)] p-3">{tripControl}</div>
           <div className="space-y-2 px-3 pb-3">{answers}</div>

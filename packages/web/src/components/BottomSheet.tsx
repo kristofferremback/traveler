@@ -15,8 +15,7 @@ const TUCKED_HEIGHT = 44;
 /**
  * The tab bar under the sheet: 3.5rem of links plus its safe-area padding, which is at
  * least 0.75rem. The sheet's heights are measured from the top of the bar, so the bar
- * has to come off the viewport before the gap does. Only ever on a phone or a tablet: a
- * desktop has the rail and no sheet.
+ * has to come off the viewport before the gap does.
  */
 const TAB_BAR = 56 + 12;
 

@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { Deviation, DeviationsResponse } from "@traveler/shared";
 import { streams } from "@/lib/api";
 import { useStream } from "@/hooks/useStream";
-import { useDesktop } from "@/hooks/useDesktop";
+import { useDesktop, useDesktopKeys } from "@/hooks/useDesktop";
 import {
   DeviationDetail,
   DeviationHeadlines,
@@ -37,11 +37,12 @@ export function DisruptionsPage() {
     : (deviations[0] ?? null);
 
   /** Replaces the entry: stepping through notices is reading one page, not thirty. */
-  function select(deviation: Deviation) {
+  function pick(id: number | null) {
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev);
-        next.set("d", String(deviation.id));
+        if (id === null) next.delete("d");
+        else next.set("d", String(id));
         return next;
       },
       { replace: true },
@@ -51,22 +52,18 @@ export function DisruptionsPage() {
   // Focus follows the keys, so Tab and a screen reader carry on from the notice being read.
   // After the render that moved the selection, which the router may defer past a frame.
   const focusSelected = useRef(false);
-  const onKey = useRef<(e: KeyboardEvent) => void>(() => {});
-  onKey.current = (e) => {
+  useDesktopKeys((e, target) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-    const target = e.target as HTMLElement | null;
-    // Not while typing, and not while reading: in the notice itself the keys scroll it.
-    if (target?.closest("input, textarea, select, [contenteditable='true'], [data-notice]")) return;
-    if (document.querySelector("dialog[open]")) return;
-    if (deviations.length === 0) return;
+    // Not while reading: in the notice itself the keys scroll it.
+    if (e.shiftKey || target?.closest("[data-notice]") || deviations.length === 0) return;
     e.preventDefault();
     const at = selected ? deviations.indexOf(selected) : -1;
     const next =
       e.key === "ArrowDown" ? Math.min(at + 1, deviations.length - 1) : Math.max(at - 1, 0);
+    if (next === at) return;
     focusSelected.current = true;
-    select(deviations[next]!);
-  };
+    pick(deviations[next]!.id);
+  });
   useEffect(() => {
     if (!focusSelected.current) return;
     focusSelected.current = false;
@@ -74,65 +71,43 @@ export function DisruptionsPage() {
       .querySelector<HTMLElement>('[aria-label="Meddelanden"] [aria-current="true"]')
       ?.focus();
   }, [selected?.id]);
-  useEffect(() => {
-    if (!desktop) return;
-    const listener = (e: KeyboardEvent) => onKey.current(e);
-    window.addEventListener("keydown", listener);
-    return () => window.removeEventListener("keydown", listener);
-  }, [desktop]);
-
-  const levels = (
-    <div role="tablist" aria-label="Nivå" className="flex gap-1.5">
-      {LEVELS.map((level) => (
-        <button
-          key={level.value}
-          role="tab"
-          aria-selected={minSeverity === level.value}
-          onClick={() => {
-            setMinSeverity(level.value);
-            // What was selected may not be at the other level, and that is not "gone".
-            setParams(
-              (prev) => {
-                const next = new URLSearchParams(prev);
-                next.delete("d");
-                return next;
-              },
-              { replace: true },
-            );
-          }}
-          className={cn(
-            "min-h-11 min-w-20 rounded-full border px-4 text-xs",
-            minSeverity === level.value
-              ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-bg)]"
-              : "border-[var(--color-border)] text-[var(--color-muted)]",
-          )}
-        >
-          {level.label}
-        </button>
-      ))}
-    </div>
-  );
-
-  const loading = !connected && !data;
-  const skeleton = (
-    <ul className="space-y-2" aria-busy="true" aria-label="Hämtar störningar">
-      {[0, 1, 2].map((i) => (
-        <li key={i}>
-          <Skeleton className="h-24 w-full" />
-        </li>
-      ))}
-    </ul>
-  );
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4 pb-24 lg:max-w-6xl lg:pb-8">
       <header className="flex items-center justify-between gap-2 pb-3 pt-3 safe-top">
         <h1 className="text-lg font-semibold">Trafikläget</h1>
-        {levels}
+        <div role="tablist" aria-label="Nivå" className="flex gap-1.5">
+          {LEVELS.map((level) => (
+            <button
+              key={level.value}
+              role="tab"
+              aria-selected={minSeverity === level.value}
+              onClick={() => {
+                setMinSeverity(level.value);
+                // What was selected may not be at the other level, and that is not "gone".
+                if (picked) pick(null);
+              }}
+              className={cn(
+                "min-h-11 min-w-20 rounded-full border px-4 text-xs",
+                minSeverity === level.value
+                  ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-bg)]"
+                  : "border-[var(--color-border)] text-[var(--color-muted)]",
+              )}
+            >
+              {level.label}
+            </button>
+          ))}
+        </div>
       </header>
 
-      {loading ? (
-        skeleton
+      {!connected && !data ? (
+        <ul className="space-y-2" aria-busy="true" aria-label="Hämtar störningar">
+          {[0, 1, 2].map((i) => (
+            <li key={i}>
+              <Skeleton className="h-24 w-full" />
+            </li>
+          ))}
+        </ul>
       ) : !desktop ? (
         <DeviationList deviations={deviations} />
       ) : deviations.length === 0 && !picked ? (
@@ -142,7 +117,7 @@ export function DisruptionsPage() {
           <DeviationHeadlines
             deviations={deviations}
             selectedId={selected?.id ?? null}
-            onSelect={select}
+            onSelect={(deviation) => pick(deviation.id)}
           />
           {/* Focusable, so a notice longer than the screen can be scrolled with the keys. */}
           <section
