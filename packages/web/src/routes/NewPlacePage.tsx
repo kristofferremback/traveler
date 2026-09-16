@@ -83,6 +83,7 @@ export function NewPlacePage() {
             type="button"
             aria-labelledby={placeFieldId}
             aria-haspopup="dialog"
+            data-popover-anchor="place"
             onClick={() => openPicker("place")}
             className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-left"
           >
@@ -111,6 +112,7 @@ export function NewPlacePage() {
       {picker === "place" ? (
         <PlaceSearch
           title="Vilken plats?"
+          anchor="place"
           currentPosition="address"
           /* Nothing to offer until something is typed, so the keyboard comes with the
              screen rather than costing a second tap. */

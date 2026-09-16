@@ -650,6 +650,7 @@ export function CommutePage() {
       {picker === "from" || picker === "to" ? (
         <PlaceSearch
           title={picker === "from" ? "Var börjar du?" : "Vart ska du?"}
+          anchor="ends"
           saved={saved}
           /* Live: the screen plans from wherever the phone is when it searches, not
              from the address it was standing at when the place was chosen. */

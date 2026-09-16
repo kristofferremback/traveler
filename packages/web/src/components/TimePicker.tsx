@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Clock, X } from "lucide-react";
 import { dayLabel, formatTime, instantToLocalInput, localInputToInstant } from "@/lib/format";
+import { usePopover } from "@/hooks/usePopover";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,7 @@ export function TimePill({ time, onOpen }: { time: PlanTime; onOpen: () => void 
       type="button"
       onClick={onOpen}
       aria-haspopup="dialog"
+      data-popover-anchor="time"
       className={cn(
         "pointer-events-auto inline-flex min-h-11 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-[var(--color-surface)]/90 px-3.5 text-sm font-medium shadow-[var(--shadow-float)] backdrop-blur-xl",
         time && "text-[var(--color-accent)]",
@@ -70,6 +72,7 @@ export function TimePicker({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const popover = usePopover("time", 380, onClose);
   const [initialDay, initialClock] = instantToLocalInput(time?.when ?? roundedNow()).split("T");
   const [day, setDay] = useState(initialDay ?? "");
   const [clock, setClock] = useState(initialClock ?? "");
@@ -88,7 +91,12 @@ export function TimePicker({
         onClose();
       }}
       aria-label="Välj tid"
-      className="m-0 mt-auto w-full max-w-none rounded-t-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg)] backdrop:bg-black/50 sm:mx-auto sm:mb-auto sm:mt-[10dvh] sm:max-w-md sm:rounded-[var(--radius-card)]"
+      style={popover.style}
+      onClick={popover.onClick}
+      className={cn(
+        "m-0 mt-auto w-full max-w-none rounded-t-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-fg)] backdrop:bg-black/50 sm:mx-auto sm:mb-auto sm:mt-[10dvh] sm:max-w-md sm:rounded-[var(--radius-card)]",
+        popover.anchored && "shadow-[var(--shadow-float)] backdrop:bg-transparent",
+      )}
     >
       <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-2">
         <h2 className="text-sm font-semibold">När reser du?</h2>

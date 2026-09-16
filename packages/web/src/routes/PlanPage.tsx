@@ -232,6 +232,7 @@ export function PlanPage() {
       {picker === "from" || picker === "to" ? (
         <PlaceSearch
           title={picker === "from" ? "Var börjar du?" : "Vart ska du?"}
+          anchor="ends"
           saved={saved}
           /* An address rather than the live ref the commute screen keeps: this screen
              plans one trip from one point, and the URL has to name it. */

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { signInContext } from "./auth";
 
 /**
@@ -164,4 +164,71 @@ test("a tablet keeps the sheet, at a width that leaves the map beside it", async
   const bar = (await nav(page).boundingBox())!;
   expect(bar.width).toBe(800);
   expect(Math.round(bar.y + bar.height)).toBe(1000);
+});
+
+test.describe("pickers", () => {
+  /** The popover's box against the control that opened it. */
+  const under = async (popover: Locator, control: Locator) => {
+    const [p, c] = [(await popover.boundingBox())!, (await control.boundingBox())!];
+    expect(p.y).toBeGreaterThan(c.y + c.height);
+    expect(p.y).toBeLessThan(c.y + c.height + 20);
+    expect(Math.abs(p.x - c.x)).toBeLessThan(2);
+  };
+
+  test("the place search opens under the trip control, and a click outside closes it", async ({ page }) => {
+    await page.goto("/");
+    await tripEnd(page, "Till").click();
+    const search = page.getByRole("dialog", { name: "Vart ska du?" });
+    await expect(search.getByRole("combobox")).toBeVisible();
+    await under(search, page.locator('[data-popover-anchor="ends"]'));
+
+    // The map stays readable behind it: no dimmed backdrop.
+    const backdrop = await search.evaluate((el) => getComputedStyle(el, "::backdrop").backgroundColor);
+    expect(backdrop).toBe("rgba(0, 0, 0, 0)");
+
+    await page.mouse.click(1200, 600);
+    await expect(search).toBeHidden();
+    await expect(page).toHaveURL(/\/$/);
+  });
+
+  test("Back closes a popover, like it does the phone's full screen", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: /^Nu/ }).click();
+    const picker = page.getByRole("dialog", { name: "Välj tid" });
+    await expect(picker).toBeVisible();
+    await under(picker, page.locator('[data-popover-anchor="time"]'));
+    await page.goBack();
+    await expect(picker).toBeHidden();
+    await expect(page.getByRole("region", { name: "Resor härifrån" })).toBeVisible();
+  });
+
+  test("the mode filter opens under its pill and Escape closes it", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Färdmedel" }).click();
+    const picker = page.getByRole("dialog", { name: "Välj färdmedel" });
+    await expect(picker).toBeVisible();
+    await under(picker, page.locator('[data-popover-anchor="modes"]'));
+    await page.keyboard.press("Escape");
+    await expect(picker).toBeHidden();
+  });
+
+  test("a popover works from the keyboard, without closing on the keys that click", async ({ page }) => {
+    // Enter and Space click at 0,0, which is outside the popover's box.
+    await page.goto("/");
+    await page.getByRole("button", { name: "Färdmedel" }).click();
+    const picker = page.getByRole("dialog", { name: "Välj färdmedel" });
+    const first = picker.getByRole("checkbox").first();
+    const was = await first.isChecked();
+    await first.focus();
+    await page.keyboard.press("Space");
+    await expect(picker).toBeVisible();
+    await expect(first).toBeChecked({ checked: !was });
+
+    await picker.getByRole("button", { name: "Klar" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(picker).toBeHidden();
+    // The pill now names what was picked, so it is found by where the popover hangs.
+    await page.locator('[data-popover-anchor="modes"]').click();
+    await expect(picker.getByRole("checkbox").first()).toBeChecked({ checked: !was });
+  });
 });
