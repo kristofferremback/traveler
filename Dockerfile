@@ -1,6 +1,6 @@
 # Traveler runs as one service: Bun serves the API and the built frontend from the
 # same origin, with SQLite on a mounted volume.
-FROM oven/bun:1.3-slim AS build
+FROM oven/bun:1.4-slim AS build
 WORKDIR /app
 
 # Manifests first so the dependency layer survives source-only changes.
@@ -13,7 +13,7 @@ RUN bun install --frozen-lockfile
 COPY . .
 RUN bun run --cwd packages/web build
 
-FROM oven/bun:1.3-slim AS runtime
+FROM oven/bun:1.4-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
