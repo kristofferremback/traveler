@@ -36,33 +36,43 @@ export function gtfsSyncReason(scheduled: boolean): string | null {
 
 /**
  * One GTFS CSV file as rows keyed by header. Fields may be quoted and a quoted field
- * may hold commas and doubled quotes; nothing here needs more than that.
+ * may hold commas, doubled quotes and newlines; nothing here needs more than that.
+ *
+ * `trips.txt` is millions of characters. Growing each field a character at a time
+ * pushed every daily sync to over a gigabyte of short-lived strings, and Bun's
+ * allocator kept most of that from the operating system for the rest of the day. A
+ * line without quotes is split as it stands; only a quoted record is walked by hand.
  */
 export function parseCsv(text: string): Record<string, string>[] {
   const rows: Record<string, string>[] = [];
   let header: string[] | null = null;
-  let field = "";
-  let record: string[] = [];
-  let quoted = false;
-  const push = () => {
-    record.push(field);
-    field = "";
-  };
-  const end = () => {
-    push();
-    if (record.length === 1 && record[0] === "") {
-      record = [];
-      return;
-    }
-    if (!header) header = record.map((h) => h.replace(/^﻿/, "").trim());
+  let at = 0;
+  while (at < text.length) {
+    const [record, next] = readRecord(text, at);
+    at = next;
+    if (record.length === 1 && record[0] === "") continue;
+    if (!header) header = record.map((h) => h.replace(/^\uFEFF/, "").trim());
     else {
       const row: Record<string, string> = {};
       header.forEach((key, i) => (row[key] = record[i] ?? ""));
       rows.push(row);
     }
-    record = [];
-  };
-  for (let i = 0; i < text.length; i++) {
+  }
+  return rows;
+}
+
+/** The record starting at `from`, and where the one after it starts. */
+function readRecord(text: string, from: number): [string[], number] {
+  let newline = text.indexOf("\n", from);
+  if (newline === -1) newline = text.length;
+  const line = text.slice(from, newline);
+  if (!line.includes('"')) return [line.replaceAll("\r", "").split(","), newline + 1];
+
+  const record: string[] = [];
+  let field = "";
+  let quoted = false;
+  let i = from;
+  for (; i < text.length; i++) {
     const c = text[i]!;
     if (quoted) {
       if (c === '"') {
@@ -72,12 +82,14 @@ export function parseCsv(text: string): Record<string, string>[] {
         } else quoted = false;
       } else field += c;
     } else if (c === '"') quoted = true;
-    else if (c === ",") push();
-    else if (c === "\n") end();
+    else if (c === ",") {
+      record.push(field);
+      field = "";
+    } else if (c === "\n") break;
     else if (c !== "\r") field += c;
   }
-  if (field !== "" || record.length > 0) end();
-  return rows;
+  record.push(field);
+  return [record, i + 1];
 }
 
 const insertRoute = db.query(

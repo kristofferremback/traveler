@@ -51,6 +51,14 @@ describe("parseCsv", () => {
       { route_id: "2", route_short_name: "25M", route_long_name: 'Say "hi"' },
     ]);
   });
+
+  test("a quoted field may span lines, and the next record still parses", () => {
+    const rows = parseCsv('trip_id,trip_headsign\n1,"Slussen\r\nvia Nacka"\n2,Jarlaberg');
+    expect(rows).toEqual([
+      { trip_id: "1", trip_headsign: "Slussen\r\nvia Nacka" },
+      { trip_id: "2", trip_headsign: "Jarlaberg" },
+    ]);
+  });
 });
 
 describe("modeFromRouteType", () => {
